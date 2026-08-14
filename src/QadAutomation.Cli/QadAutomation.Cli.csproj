@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Framework, nullable and implicit-usings settings come from
+       Directory.Build.props so every project shares them. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+
+    <!-- The readme calls for a standalone .exe. 'qad' is what gets typed. -->
+    <AssemblyName>qad</AssemblyName>
+    <RootNamespace>QadAutomation.Cli</RootNamespace>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+
+    <!-- Trimming is off: SSH.NET and the UI-automation work still to come are
+         both reflection-heavy, and a trimmed build that fails at runtime is a
+         worse trade than a larger executable. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\QadAutomation.Core\QadAutomation.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Lets the test project drive the CLI end-to-end. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="QadAutomation.Core.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,84 @@
+namespace QadAutomation.Core.Configuration.Raw;
+
+/*
+ * The raw layer is a faithful, permissive mirror of the JSON file: every member
+ * is nullable, nothing is validated, nothing has behaviour.
+ *
+ * Why a separate layer instead of deserialising straight into the domain records?
+ *
+ *  1. "Absent" and "empty" are different things here. An environment that omits
+ *     `host` should inherit the client default; one that sets it to "" is a
+ *     mistake. Only a nullable raw shape can tell those apart.
+ *  2. The domain records can then be non-nullable and always-valid. Code further
+ *     down the pipeline never re-checks whether a host is present.
+ *  3. The file format can change independently of the domain model - a rename in
+ *     the JSON touches one class here, not the whole codebase.
+ *
+ * These are mutable classes with settable properties because that is what
+ * System.Text.Json needs; they are internal to the configuration namespace's
+ * contract and never escape into the rest of the application.
+ */
+
+/// <summary>Root object of <c>config.json</c>.</summary>
+public sealed class ConfigurationFile
+{
+    public string? WorkingFolder { get; set; }
+    public List<ClientSection>? Clients { get; set; }
+}
+
+/// <summary>One entry in the <c>clients</c> array.</summary>
+public sealed class ClientSection
+{
+    public string? Id { get; set; }
+    public string? DisplayName { get; set; }
+    public VpnSection? Vpn { get; set; }
+
+    /// <summary>
+    /// Values inherited by every environment of this client. Cuts the repetition
+    /// out of a 4-clients x 3-environments file, where most fields are identical.
+    /// </summary>
+    public EnvironmentSection? Defaults { get; set; }
+
+    public List<EnvironmentSection>? Environments { get; set; }
+}
+
+/// <summary>
+/// Used both for a client's <c>defaults</c> and for each environment. Sharing one
+/// shape is what makes the override rule trivial: same field, environment wins.
+/// </summary>
+public sealed class EnvironmentSection
+{
+    public string? Name { get; set; }
+    public bool? IsProduction { get; set; }
+
+    public string? Host { get; set; }
+    public int? Port { get; set; }
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+    public string? PrivateKeyPath { get; set; }
+
+    public string? SrcRemotePath { get; set; }
+    public string? QrfRemotePath { get; set; }
+
+    public CompileSection? Compile { get; set; }
+}
+
+/// <summary>VPN parameters for a client.</summary>
+public sealed class VpnSection
+{
+    /// <summary>Parsed into <see cref="VpnType"/>; case-insensitive.</summary>
+    public string? Type { get; set; }
+
+    public string? ConnectionName { get; set; }
+    public string? Username { get; set; }
+    public string? Password { get; set; }
+}
+
+/// <summary>Compile recipe for a client default or a single environment.</summary>
+public sealed class CompileSection
+{
+    /// <summary>Parsed into <see cref="CompileStrategy"/>; case-insensitive.</summary>
+    public string? Strategy { get; set; }
+
+    public List<string>? Commands { get; set; }
+}

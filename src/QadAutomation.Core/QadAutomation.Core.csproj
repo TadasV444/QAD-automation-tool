@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared settings live in Directory.Build.props. -->
+  <PropertyGroup>
+    <RootNamespace>QadAutomation.Core</RootNamespace>
+
+    <!-- The XML comments in this project carry the design rationale, so surface
+         a warning if a public type loses its documentation. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- CS1591 (missing XML comment) is not enforced: it would demand a comment
+         on every trivial record property for no benefit. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>
