@@ -1,0 +1,57 @@
+# --- Build output ---
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+
+# --- IDE / tooling ---
+.vs/
+.idea/
+.vscode/
+.claude/settings.local.json
+
+# =========================================================================
+# NEVER COMMIT
+# =========================================================================
+# Read this before adding anything to the repository.
+#
+# .gitignore only stops a file being ADDED. It does nothing about history:
+# once a file has been committed even once, it stays in the repository
+# forever and removing it needs a history rewrite plus a credential
+# rotation. Check `git status` before your first push.
+#
+# Two kinds of sensitive data live here:
+#   1. Secrets      - passwords. These live ONLY in .env
+#   2. Client info  - names, hostnames, remote paths, compile commands.
+#                     These live in config.json
+# Neither file may ever be committed.
+
+# Secrets. The real one; .env.example is the checked-in template.
+.env
+.env.*
+!.env.example
+
+# Client structure. config.example.json is the checked-in template and
+# contains placeholders only.
+config.json
+config.*.json
+!config.example.json
+
+# The word list used by the local .git/hooks/pre-commit hook. It is a list of
+# exactly the strings that must not become public, so it must not itself be
+# committed.
+.client-names
+
+# Private keys, in any of the usual shapes.
+*.key
+*.pem
+*.ppk
+id_rsa*
+
+# Internal documentation. Both name real clients and describe their
+# network setup, so they stay local.
+readme.md
+information.md

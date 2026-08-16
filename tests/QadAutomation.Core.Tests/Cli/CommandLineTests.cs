@@ -42,9 +42,23 @@ public sealed class CommandLineParserTests
     }
 
     [Fact]
-    public void A_third_bare_argument_is_rejected()
+    public void Every_bare_word_after_the_verb_is_kept_in_order()
     {
-        Assert.Throws<ArgumentException>(() => CommandLineParser.Parse(["ticket", "1", "2"]));
+        // The parser no longer judges how many arguments are too many - arity
+        // belongs to the command. 'vpn connect pilot' needs two where
+        // 'ticket' needs one.
+        var parsed = CommandLineParser.Parse(["vpn", "connect", "pilot"]);
+
+        Assert.Equal("vpn", parsed.Command);
+        Assert.Equal(["connect", "pilot"], parsed.Arguments);
+        Assert.Equal("connect", parsed.Target);
+        Assert.Equal("pilot", parsed.Argument(1));
+    }
+
+    [Fact]
+    public void Asking_for_an_argument_that_was_not_typed_gives_null()
+    {
+        Assert.Null(CommandLineParser.Parse(["validate"]).Argument(0));
     }
 }
 
