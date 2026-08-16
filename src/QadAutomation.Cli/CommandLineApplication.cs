@@ -1,6 +1,8 @@
 using QadAutomation.Cli.Commands;
 using QadAutomation.Core.Configuration;
+using QadAutomation.Core.Processes;
 using QadAutomation.Core.Tickets;
+using QadAutomation.Core.Vpn;
 
 namespace QadAutomation.Cli;
 
@@ -26,11 +28,22 @@ public sealed class CommandLineApplication
 {
     private readonly TextWriter _output;
     private readonly TextWriter _error;
+    private readonly IVpnConnectorFactory _connectors;
 
-    public CommandLineApplication(TextWriter output, TextWriter error)
+    /// <param name="output">Where normal output goes.</param>
+    /// <param name="error">Where diagnostics go.</param>
+    /// <param name="connectors">
+    /// Overridable so an end-to-end test can exercise the VPN commands without a
+    /// VPN. Defaults to the real thing, so <c>Program</c> stays a single line.
+    /// </param>
+    public CommandLineApplication(
+        TextWriter output,
+        TextWriter error,
+        IVpnConnectorFactory? connectors = null)
     {
         _output = output;
         _error = error;
+        _connectors = connectors ?? new VpnConnectorFactory(new ProcessRunner());
     }
 
     public int Run(string[] args)
@@ -62,6 +75,11 @@ public sealed class CommandLineApplication
             _error.WriteLine(ex.Message);
             return ExitCode.TicketError;
         }
+        catch (VpnException ex)
+        {
+            _error.WriteLine(ex.Message);
+            return ExitCode.VpnError;
+        }
         catch (Exception ex)
         {
             // Anything reaching here is a defect in the tool, so the stack trace
@@ -81,25 +99,83 @@ public sealed class CommandLineApplication
                 return ExitCode.Ok;
 
             case "validate":
-                return new ValidateConfigCommand(CreateLoader(args), _output).Execute();
+                return Expect(args, 0, "qad validate")
+                    ? new ValidateConfigCommand(CreateLoader(args), _output).Execute()
+                    : ExitCode.UsageError;
 
             case "tickets":
-                return new ListTicketsCommand(CreateTicketReader(args), _output).Execute();
+                return Expect(args, 0, "qad tickets")
+                    ? new ListTicketsCommand(CreateTicketReader(args), _output).Execute()
+                    : ExitCode.UsageError;
 
             case "ticket":
-                if (string.IsNullOrWhiteSpace(args.Target))
-                {
-                    _error.WriteLine("Usage: qad ticket <ticket>");
-                    return ExitCode.UsageError;
-                }
+                return Expect(args, 1, "qad ticket <ticket>")
+                    ? new ShowTicketCommand(CreateTicketReader(args), _output).Execute(args.Target!)
+                    : ExitCode.UsageError;
 
-                return new ShowTicketCommand(CreateTicketReader(args), _output).Execute(args.Target);
+            case "vpn":
+                return DispatchVpn(args);
 
             default:
                 _error.WriteLine($"Unknown command '{args.Command}'.");
                 WriteUsage(_error);
                 return ExitCode.UsageError;
         }
+    }
+
+    private int DispatchVpn(CommandLineArguments args)
+    {
+        const string usage = "qad vpn <status|connect|disconnect> <client>";
+
+        if (!Expect(args, 2, usage))
+        {
+            return ExitCode.UsageError;
+        }
+
+        var command = new VpnCommand(CreateLoader(args), _connectors, _output);
+        var clientId = args.Argument(1)!;
+
+        switch (args.Target!.ToLowerInvariant())
+        {
+            case "status":
+                return command.Status(clientId);
+
+            case "connect":
+                return command.Connect(clientId);
+
+            case "disconnect":
+                return command.Disconnect(clientId);
+
+            default:
+                _error.WriteLine($"Unknown vpn action '{args.Target}'.");
+                _error.WriteLine($"Usage: {usage}");
+                return ExitCode.UsageError;
+        }
+    }
+
+    /// <summary>
+    /// Checks a command was given exactly the arguments it takes, printing the
+    /// usage line for that command if not.
+    /// </summary>
+    /// <remarks>
+    /// Both directions matter. Too few is an obvious mistake; too many usually
+    /// means a quoting error - <c>qad ticket Ticket #9999555</c> rather than
+    /// <c>qad ticket "Ticket #9999555"</c> - and silently ignoring the extra word
+    /// would act on the wrong ticket without saying so.
+    /// </remarks>
+    private bool Expect(CommandLineArguments args, int count, string usage)
+    {
+        if (args.Arguments.Count == count)
+        {
+            return true;
+        }
+
+        _error.WriteLine(args.Arguments.Count < count
+            ? "Not enough arguments."
+            : $"Too many arguments. If a value contains a space, quote it.");
+
+        _error.WriteLine($"Usage: {usage}");
+        return false;
     }
 
     private static IConfigurationLoader CreateLoader(CommandLineArguments args) =>
@@ -119,21 +195,25 @@ public sealed class CommandLineApplication
             QAD Compile Automation Tool
 
             Usage:
-              qad validate            Load the configuration and print a redacted summary
-              qad tickets             List ticket folders in the working folder
-              qad ticket <ticket>     Show how a ticket folder's files classify as SRC/QRF
-              qad help                Show this help
+              qad validate                  Load the configuration and print a redacted summary
+              qad tickets                   List ticket folders in the working folder
+              qad ticket <ticket>           Show how a ticket folder's files classify as SRC/QRF
+              qad vpn status <client>       Report whether the client's VPN is connected
+              qad vpn connect <client>      Bring the client's VPN up and leave it up
+              qad vpn disconnect <client>   Take the client's VPN down
+              qad help                      Show this help
 
             Options:
-              --config <path>         Use a specific configuration file
+              --config <path>               Use a specific configuration file
 
             Configuration is read from, in order:
               1. --config <path>
               2. the QAD_TOOL_CONFIG environment variable
-              3. %APPDATA%\QadAutomationTool\config.json
+              3. config.json in the current directory
               4. config.json next to the executable
+              5. %APPDATA%\QadAutomationTool\config.json
 
-            No command in this version makes any network connection.
+            Only the 'vpn' commands touch the network. Everything else is local.
             """);
     }
 }

@@ -1,0 +1,114 @@
+{
+  // ---------------------------------------------------------------------
+  // Template. Copy to config.json and fill in.
+  //
+  // config.json is git-ignored and holds client structure: names, hosts,
+  // remote paths, compile commands. This file - config.example.json - is
+  // committed, so it must only ever contain placeholder values.
+  //
+  // Passwords do NOT belong here. Write ${VARIABLE_NAME} and put the value
+  // in .env, which is also git-ignored.
+  //
+  //   config.json   "password": "${PILOT_SSH_PASSWORD}"
+  //   .env          PILOT_SSH_PASSWORD=hunter2
+  //
+  // Check your work with:  qad validate
+  // ---------------------------------------------------------------------
+
+  "workingFolder": "C:\\QAD Tasks",
+
+  "clients": [
+    {
+      // 'id' is what you type on the command line. Short and stable.
+      "id": "pilot",
+      "displayName": "Pilot Client",
+
+      "vpn": {
+        // None | WindowsRas | FortiClient
+        "type": "WindowsRas",
+        // Exactly as `Get-VpnConnection | Select-Object Name` reports it.
+        "connectionName": "EXAMPLE-VPN"
+
+        // Preferably leave username and password out entirely. If the Windows
+        // VPN entry was saved with "remember my credentials", rasdial connects
+        // on the name alone and no VPN password exists for anything to leak.
+        //
+        // Supply them only where that is not an option. Set BOTH or NEITHER -
+        // one without the other makes rasdial prompt, which cannot be
+        // answered. A password given this way is briefly readable in the
+        // process list, which is a limitation of rasdial itself.
+        //
+        // "username": "CHANGE_ME",
+        // "password": "${PILOT_VPN_PASSWORD}"
+      },
+
+      // Inherited by every environment below. Anything an environment sets
+      // again overrides what is here.
+      "defaults": {
+        "port": 22,
+        "username": "CHANGE_ME",
+        "password": "${PILOT_SSH_PASSWORD}",
+        // Prefer a key where the server allows it - then no password is
+        // needed in .env at all.
+        "privateKeyPath": null,
+
+        "srcRemotePath": "/qad/live/src",
+        "qrfRemotePath": "/qad/live/qrf",
+
+        "compile": {
+          // DirectCommand | InteractiveMenu
+          "strategy": "DirectCommand",
+          // Placeholders substituted per file at run time:
+          //   {remotePath}  the destination directory
+          //   {fileName}    the file's own name
+          //   {remoteFile}  the two joined
+          "commands": [
+            "cd {remotePath} && compile {fileName}"
+          ]
+        }
+      },
+
+      "environments": [
+        { "name": "DEVL", "host": "devl.example.local", "srcRemotePath": "/qad/devl/src", "qrfRemotePath": "/qad/devl/qrf" },
+        { "name": "TEST", "host": "test.example.local", "srcRemotePath": "/qad/test/src", "qrfRemotePath": "/qad/test/qrf" },
+
+        // Names like PROD / LIVE / PRODUCTION are treated as production
+        // automatically. Set "isProduction" explicitly to override that.
+        // A separate secret is used here because production credentials
+        // usually differ.
+        { "name": "PROD", "host": "prod.example.local", "password": "${PILOT_PROD_SSH_PASSWORD}" }
+      ]
+    },
+
+    {
+      "id": "second",
+      "displayName": "Second Client",
+
+      "vpn": {
+        // "None" means the tool does not bring the VPN up - connect by hand
+        // first. Deliberate for FortiClient sites: UI automation is the one
+        // fragile part of an otherwise protocol-level design.
+        "type": "None"
+      },
+
+      "defaults": {
+        "host": "qad.example.local",
+        "username": "CHANGE_ME",
+        "password": "${SECOND_SSH_PASSWORD}",
+        "srcRemotePath": "/qad/src",
+        "qrfRemotePath": "/qad/qrf",
+        "compile": {
+          // Menu-driven interactive CLIs. The keystroke script is still
+          // being mapped out, so 'commands' may be empty for now.
+          "strategy": "InteractiveMenu",
+          "commands": []
+        }
+      },
+
+      "environments": [
+        { "name": "TEST" },
+        { "name": "PROD", "host": "qad-prod.example.local" }
+      ]
+    }
+  ]
+}

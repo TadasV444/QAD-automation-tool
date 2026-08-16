@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Settings shared by every project in the solution. Keeping them here means a
+    new project cannot accidentally opt out of nullable reference types or the
+    warnings-as-errors policy simply by being scaffolded from a template.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- A misrouted file or a silently-ignored config field is expensive here,
+         so compiler warnings are treated as defects rather than suggestions. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
