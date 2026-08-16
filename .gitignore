@@ -40,6 +40,11 @@ config.json
 config.*.json
 !config.example.json
 
+# The word list used by the local .git/hooks/pre-commit hook. It is a list of
+# exactly the strings that must not become public, so it must not itself be
+# committed.
+.client-names
+
 # Private keys, in any of the usual shapes.
 *.key
 *.pem
