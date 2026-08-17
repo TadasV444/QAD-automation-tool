@@ -16,7 +16,8 @@ namespace QadAutomation.Cli;
 public sealed record CommandLineArguments(
     string Command,
     IReadOnlyList<string> Arguments,
-    string? ConfigPath)
+    string? ConfigPath,
+    IReadOnlySet<string> Flags)
 {
     /// <summary>The first positional argument, or <c>null</c>.</summary>
     public string? Target => Argument(0);
@@ -24,6 +25,9 @@ public sealed record CommandLineArguments(
     /// <summary>The <paramref name="index"/>th positional argument, or <c>null</c>.</summary>
     public string? Argument(int index) =>
         index >= 0 && index < Arguments.Count ? Arguments[index] : null;
+
+    /// <summary>Whether a switch such as <c>--dry-run</c> was given.</summary>
+    public bool HasFlag(string flag) => Flags.Contains(flag);
 }
 
 /// <summary>
@@ -42,6 +46,26 @@ public static class CommandLineParser
 {
     public const string ConfigOption = "--config";
 
+    /// <summary>Show what would happen without changing anything.</summary>
+    public const string DryRunFlag = "--dry-run";
+
+    /// <summary>Confirm an action that would otherwise be refused.</summary>
+    public const string YesFlag = "--yes";
+
+    /// <summary>Upload without renaming the existing remote file out of the way.</summary>
+    public const string NoBackupFlag = "--no-backup";
+
+    /// <summary>
+    /// Switches the parser accepts.
+    /// </summary>
+    /// <remarks>
+    /// An allow-list, so a mistyped <c>--dryrun</c> is rejected rather than
+    /// ignored. Silently dropping an unrecognised switch is how someone ends up
+    /// believing they ran a dry run when they did not.
+    /// </remarks>
+    private static readonly HashSet<string> KnownFlags =
+        new(StringComparer.OrdinalIgnoreCase) { DryRunFlag, YesFlag, NoBackupFlag };
+
     /// <summary>
     /// Parses <paramref name="args"/>.
     /// </summary>
@@ -55,6 +79,7 @@ public static class CommandLineParser
 
         string? command = null;
         var positional = new List<string>();
+        var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string? configPath = null;
 
         for (var i = 0; i < args.Length; i++)
@@ -74,7 +99,13 @@ public static class CommandLineParser
 
             if (arg is "-h" or "--help" or "-?")
             {
-                return new CommandLineArguments("help", [], configPath);
+                return new CommandLineArguments("help", [], configPath, flags);
+            }
+
+            if (KnownFlags.Contains(arg))
+            {
+                flags.Add(arg.ToLowerInvariant());
+                continue;
             }
 
             if (arg.StartsWith('-'))
@@ -92,6 +123,6 @@ public static class CommandLineParser
             }
         }
 
-        return new CommandLineArguments(command ?? "help", positional, configPath);
+        return new CommandLineArguments(command ?? "help", positional, configPath, flags);
     }
 }
