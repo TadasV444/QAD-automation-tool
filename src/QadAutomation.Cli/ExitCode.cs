@@ -21,5 +21,12 @@ public static class ExitCode
     /// </summary>
     public const int VpnError = 4;
 
+    /// <summary>
+    /// The files could not be transferred. Separate from <see cref="VpnError"/>
+    /// because the two call for different responses: a VPN failure means try
+    /// again, a transfer failure usually means a path or a permission is wrong.
+    /// </summary>
+    public const int TransferError = 5;
+
     public const int Unexpected = 99;
 }

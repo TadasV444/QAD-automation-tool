@@ -265,6 +265,32 @@ public sealed class ConfigurationResolverTests
     /// then changes only the one thing it is about, which keeps what is under
     /// test obvious.
     /// </summary>
+    [Fact]
+    public void Configuration_null_does_not_clear_an_inherited_value()
+    {
+        // Documenting a real limitation rather than a bug. Inheritance is
+        // `environment.X ?? defaults.X`, and after deserialisation an absent
+        // JSON key and an explicit `null` are the same thing: null. So there is
+        // no way to write "this environment deliberately has no SRC path" once
+        // defaults supplies one.
+        //
+        // Left as-is because the workaround is simple and the fix is not: telling
+        // the two apart needs a tri-state wrapper on every optional field, which
+        // is a lot of machinery for a case with an easy alternative. If two
+        // environments differ on a setting, put it on each environment rather
+        // than in defaults.
+        //
+        // The trap this pins down is believing `"srcRemotePath": null` disables
+        // an inherited path when it silently keeps it - which, for a path, means
+        // files going somewhere nobody intended.
+        var file = FileWith(client => client.Environments =
+        [
+            new EnvironmentSection { Name = "DEVL", SrcRemotePath = null }
+        ]);
+
+        Assert.Equal("/qad/src", Resolve(file).Clients[0].Environments[0].Paths.Src);
+    }
+
     private static ConfigurationFile FileWith(Action<ClientSection>? customise = null)
     {
         var client = new ClientSection

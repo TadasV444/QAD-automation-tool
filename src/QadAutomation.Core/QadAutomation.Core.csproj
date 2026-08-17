@@ -13,4 +13,17 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- SFTP. The same library the tool would need for SSH later, so the
+         compile step will not add another dependency.
+
+         This is an infrastructure dependency in a project otherwise described
+         as "all logic". That is consistent rather than a lapse: Core already
+         owns ProcessRunner and System.Diagnostics.Process. The rule this
+         project follows is that Core knows nothing about *consoles* - about
+         there being a user watching - not that it is free of I/O. Protocol
+         work belongs here; argument parsing and printing do not. -->
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+  </ItemGroup>
+
 </Project>
