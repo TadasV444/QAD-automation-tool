@@ -45,6 +45,11 @@ config.*.json
 # committed.
 .client-names
 
+# Output of `dotnet publish -o publish`. A self-contained build is ~64 MB, and
+# the config.json and .env that sit beside the exe while testing are in here
+# too, so a single `git add -A` would commit both the binary and the secrets.
+publish/
+
 # Private keys, in any of the usual shapes.
 *.key
 *.pem
