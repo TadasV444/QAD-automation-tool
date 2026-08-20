@@ -112,6 +112,34 @@ public sealed class CompileCommandTests : IDisposable
     }
 
     [Fact]
+    public void The_progress_error_is_pulled_out_of_the_terminal_noise()
+    {
+        // Captured from a real failed compile, with the paths made generic. The
+        // editor positions its cursor instead of writing newlines, so without
+        // this the useful two lines arrive buried in escape sequences.
+        Uploaded("rep_b.p");
+        _server.WithFile($"{QrfPath}/rep_b.r", "STALE");
+        _shell.Screen = Screen(
+            "<ESC>[50;1HCompiling procedure...<ESC>[50;199H<ESC>[H<ESC>[J" +
+            "<ESC>[20;60Hlqqqqqqqqqqqqq Error qqqqqqqqqqqqqk" +
+            "<ESC>[21;60Hx<ESC>[21;76H** Unable to understand after -- \"testing\". (247)<ESC>[21;140Hx" +
+            "<ESC>[23;60Hx /appl/qad/reports/rep_b.p  x" +
+            "<ESC>[24;83HCould not understand line 15. (198)<ESC>[24;140Hx" +
+            "<ESC>[26;60Hx qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq x" +
+            "<ESC>[27;98H<<ESC>[4mO<ESC>[mK><ESC>[50;199H");
+
+        var (_, _, error) = Run("compile", "pilot", "TEST", "9999555");
+
+        Assert.Contains("Unable to understand after -- \"testing\". (247)", error);
+        Assert.Contains("Could not understand line 15. (198)", error);
+
+        // The noise that made the first real run unreadable.
+        Assert.DoesNotContain("[50;199H", error);
+        Assert.DoesNotContain("[21;76H", error);
+        Assert.DoesNotContain("qqqq", error);
+    }
+
+    [Fact]
     public void A_src_program_is_reported_as_not_compiled_and_the_run_is_not_clean()
     {
         // A ticket whose SRC half was silently left unbuilt, reported as
@@ -184,6 +212,13 @@ public sealed class CompileCommandTests : IDisposable
 
         Assert.DoesNotContain("hunter2", output + error);
     }
+
+    /// <summary>
+    /// Builds a terminal capture, with <c>&lt;ESC&gt;</c> standing in for the
+    /// escape byte - a raw one in source is invisible in every editor and diff.
+    /// </summary>
+    private static string Screen(string withMarkers) =>
+        withMarkers.Replace("<ESC>", ((char)27).ToString(), StringComparison.Ordinal);
 
     private void Uploaded(params string[] names)
     {

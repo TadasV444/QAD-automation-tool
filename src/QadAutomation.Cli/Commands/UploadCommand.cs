@@ -105,49 +105,26 @@ public sealed class UploadCommand
             takeBackups: options.TakeBackups,
             onProgress: line => _output.WriteLine(line));
 
-        WriteOutcome(outcome, client.Id, environment.Name, plan.TicketName);
+        WriteOutcome(_output, outcome, client.Id, environment.Name, plan.TicketName);
 
         return ExitCode.Ok;
     }
 
     private void WritePlan(ClientProfile client, UploadPlan plan)
     {
-        _output.WriteLine($"Ticket      : {plan.TicketName}");
-        _output.WriteLine($"Client      : {client.DisplayName} [{client.Id}]");
-
-        var marker = plan.IsProduction ? "   ** PRODUCTION **" : string.Empty;
-        _output.WriteLine($"Environment : {plan.Environment.Name}{marker}");
-        _output.WriteLine($"Server      : {plan.Environment.Ssh.Username}@{plan.Environment.Ssh.Host}:{plan.Environment.Ssh.Port}");
-        _output.WriteLine();
-
-        if (plan.IsEmpty)
-        {
-            _output.WriteLine("No SRC or QRF files found in this ticket folder.");
-            return;
-        }
-
-        _output.WriteLine($"{plan.Uploads.Count} file(s) to upload:");
-
-        // Grouped by destination so a file about to go somewhere unexpected is
-        // obvious at a glance, rather than buried in a flat list.
-        foreach (var group in plan.Uploads.GroupBy(u => u.RemoteDirectory).OrderBy(g => g.Key, StringComparer.Ordinal))
-        {
-            _output.WriteLine();
-            _output.WriteLine($"  {group.Key}/");
-
-            foreach (var upload in group)
-            {
-                _output.WriteLine($"    [{upload.Kind.ToString().ToUpperInvariant()}] {upload.File.FileName}");
-            }
-        }
-
-        _output.WriteLine();
+        PlanDisplay.WriteHeader(_output, client, plan.TicketName, plan.Environment);
+        PlanDisplay.WriteUploadPlan(_output, plan);
     }
 
-    private void WriteOutcome(UploadOutcome outcome, string clientId, string environmentName, string ticketName)
+    internal static void WriteOutcome(
+        TextWriter output,
+        UploadOutcome outcome,
+        string clientId,
+        string environmentName,
+        string ticketName)
     {
-        _output.WriteLine();
-        _output.WriteLine($"Done - {outcome.CreatedCount} created, {outcome.ReplacedCount} replaced.");
+        output.WriteLine();
+        output.WriteLine($"Done - {outcome.CreatedCount} created, {outcome.ReplacedCount} replaced.");
 
         if (outcome.WithBackups.Count == 0)
         {
@@ -157,20 +134,20 @@ public sealed class UploadCommand
         // Printed as ready-to-paste commands: if the deploy turns out to be
         // wrong, the operator needs the undo in the next thirty seconds, not
         // after reconstructing filenames from memory.
-        _output.WriteLine();
-        _output.WriteLine($"Previous versions saved to {outcome.BackupFolder}");
-        _output.WriteLine();
-        _output.WriteLine("To undo, copy them back over the ticket folder and upload again:");
+        output.WriteLine();
+        output.WriteLine($"Previous versions saved to {outcome.BackupFolder}");
+        output.WriteLine();
+        output.WriteLine("To undo, copy them back over the ticket folder and upload again:");
 
         foreach (var file in outcome.WithBackups)
         {
-            _output.WriteLine($"  copy /Y \"{file.LocalBackupPath}\" \"{file.Planned.File.LocalPath}\"");
+            output.WriteLine($"  copy /Y \"{file.LocalBackupPath}\" \"{file.Planned.File.LocalPath}\"");
         }
 
         // The restore is a re-upload rather than a server-side move, so the
         // second half of the undo is this tool. Spelled out because the first
         // half looks complete on its own.
-        _output.WriteLine($"  qad upload {clientId} {environmentName} {Quote(ticketName)} --no-backup");
+        output.WriteLine($"  qad upload {clientId} {environmentName} {Quote(ticketName)} --no-backup");
     }
 
     /// <summary>
@@ -181,7 +158,7 @@ public sealed class UploadCommand
     /// character the shell may treat as a comment. An undo line that cannot be
     /// pasted is worse than none, because it is trusted.
     /// </remarks>
-    private static string Quote(string value) =>
+    internal static string Quote(string value) =>
         value.Any(char.IsWhiteSpace) ? $"\"{value}\"" : value;
 }
 
