@@ -64,14 +64,27 @@ internal static class PlanDisplay
     /// <summary>The statements a compile will type, and what it will check.</summary>
     public static void WriteCompilePlan(TextWriter output, CompilePlan plan)
     {
-        if (plan.Compiles.Count > 0)
+        if (!plan.IsEmpty)
         {
-            output.WriteLine($"{plan.Compiles.Count} program(s) to compile:");
+            output.WriteLine($"{plan.Qrf.Count + plan.Src.Count} program(s) to compile:");
             output.WriteLine();
 
-            foreach (var compile in plan.Compiles)
+            foreach (var compile in plan.Src)
             {
-                output.WriteLine($"  [{compile.Kind.ToString().ToUpperInvariant()}] {compile.File.FileName}");
+                output.WriteLine($"  [SRC] {compile.File.FileName}");
+
+                // Every language, because a SRC program is only compiled when
+                // all of them land - and a missing one here is the quickest way
+                // to notice a language is not configured.
+                foreach (var result in compile.Results.OrderBy(r => r.Key, StringComparer.Ordinal))
+                {
+                    output.WriteLine($"      -> {result.Value}");
+                }
+            }
+
+            foreach (var compile in plan.Qrf)
+            {
+                output.WriteLine($"  [QRF] {compile.File.FileName}");
 
                 // Shown in full because it is what will actually be typed. A
                 // wrong path here is the difference between compiling and

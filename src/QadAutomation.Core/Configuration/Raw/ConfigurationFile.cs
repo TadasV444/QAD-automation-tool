@@ -95,5 +95,10 @@ public sealed class SrcCompileSection
 {
     public string? ManifestPath { get; set; }
     public string? WorkingDirectory { get; set; }
-    public List<string>? Commands { get; set; }
+
+    /// <summary>Run once per language, with <c>{language}</c> substituted.</summary>
+    public string? Command { get; set; }
+
+    /// <summary>Language code to the root its compiled output lands under.</summary>
+    public Dictionary<string, string>? Languages { get; set; }
 }

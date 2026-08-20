@@ -169,7 +169,7 @@ public sealed class CommandLineApplication
                             CreateTicketReader(args),
                             _connectors,
                             new FileUploader(_sftp),
-                            new ProgressEditorCompiler(_shells, _sftp),
+                            new QadCompiler(_shells, _sftp),
                             _output,
                             _error)
                         .Execute(
@@ -188,7 +188,7 @@ public sealed class CommandLineApplication
                             CreateLoader(args),
                             CreateTicketReader(args),
                             _connectors,
-                            new ProgressEditorCompiler(_shells, _sftp),
+                            new QadCompiler(_shells, _sftp),
                             _output,
                             _error)
                         .Execute(

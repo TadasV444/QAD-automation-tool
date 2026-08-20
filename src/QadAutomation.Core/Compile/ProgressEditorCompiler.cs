@@ -3,15 +3,6 @@ using QadAutomation.Core.Transfer;
 
 namespace QadAutomation.Core.Compile;
 
-/// <summary>Compiles a ticket's programs on the remote host.</summary>
-public interface IProgramCompiler
-{
-    /// <exception cref="TransferException">
-    /// If the host cannot be reached or the shell dies mid-run.
-    /// </exception>
-    CompileOutcome Compile(CompilePlan plan, SshEndpoint endpoint, Action<string>? onProgress = null);
-}
-
 /// <summary>
 /// Drives the QAD Progress procedure editor, one statement per report.
 /// </summary>
@@ -33,14 +24,8 @@ public interface IProgramCompiler
 /// which is the check the operator already trusts, and the captured screen is
 /// only shown when that check says the compile failed.
 /// </para>
-/// <para>
-/// Two connections are opened: a shell to type into, and an SFTP session to read
-/// timestamps. They cannot be the same channel, and the alternative - shelling
-/// out to <c>ls</c> and parsing it - would put the verdict back on screen
-/// scraping, which is precisely what this design avoids.
-/// </para>
 /// </remarks>
-public sealed class ProgressEditorCompiler : IProgramCompiler
+internal sealed class ProgressEditorCompiler
 {
     /// <summary>
     /// How long output must stop before the screen is considered settled.
@@ -49,7 +34,7 @@ public sealed class ProgressEditorCompiler : IProgramCompiler
     /// The operator reports compiles finishing "very quickly", so this is tuned
     /// for a screen redraw rather than for the compile itself. Too short and a
     /// statement is typed into an editor that has not finished drawing; the cost
-    /// of too long is only wasted seconds.
+    /// of too long is only wasted seconds. Proven against the real editor.
     /// </remarks>
     private static readonly TimeSpan SettleFor = TimeSpan.FromMilliseconds(750);
 
@@ -57,60 +42,35 @@ public sealed class ProgressEditorCompiler : IProgramCompiler
     private static readonly TimeSpan StepTimeout = TimeSpan.FromSeconds(30);
 
     private readonly ISshShellFactory _shells;
-    private readonly ISftpSessionFactory _sessions;
 
-    public ProgressEditorCompiler(ISshShellFactory shells, ISftpSessionFactory sessions)
+    public ProgressEditorCompiler(ISshShellFactory shells) => _shells = shells;
+
+    public IReadOnlyList<CompiledProgram> Compile(
+        CompilePlan plan,
+        QrfCompileSettings recipe,
+        ISftpSession session,
+        SshEndpoint endpoint,
+        Action<string> report)
     {
-        _shells = shells;
-        _sessions = sessions;
-    }
-
-    /// <inheritdoc />
-    public CompileOutcome Compile(CompilePlan plan, SshEndpoint endpoint, Action<string>? onProgress = null)
-    {
-        ArgumentNullException.ThrowIfNull(plan);
-        ArgumentNullException.ThrowIfNull(endpoint);
-
-        var report = onProgress ?? (_ => { });
-
-        if (plan.IsEmpty)
-        {
-            return new CompileOutcome([], plan.Skipped);
-        }
-
-        var recipe = plan.Environment.Compile.Qrf
-            ?? throw new ConfigurationException(
-                $"'{plan.Environment.Name}' has no 'compile.qrf' block, so nothing can be compiled.");
-
-        report($"Connecting to {endpoint.Username}@{endpoint.Host}:{endpoint.Port}...");
-
-        using var session = _sessions.Connect(endpoint);
-
-        report($"Connected. Host key {session.HostKeyFingerprint}");
-
         VerifySourcesExist(plan, session);
 
         // Read before anything is typed. Asking afterwards could only say what
         // the timestamp is, not whether it moved.
-        var before = plan.Compiles.ToDictionary(
+        var before = plan.Qrf.ToDictionary(
             compile => compile,
             compile => session.LastWriteTime(compile.RemoteResult));
 
         var screens = RunEditor(plan, recipe, endpoint, report);
 
-        var programs = plan.Compiles
-            .Select(compile =>
-            {
-                var after = session.LastWriteTime(compile.RemoteResult);
-                var result = Moved(before[compile], after) ? CompileResult.Compiled : CompileResult.Failed;
+        return [.. plan.Qrf.Select(compile =>
+        {
+            var after = session.LastWriteTime(compile.RemoteResult);
+            var result = Moved(before[compile], after) ? CompileResult.Compiled : CompileResult.Failed;
 
-                report($"  {(result == CompileResult.Compiled ? "compiled" : "FAILED  ")} {compile.File.FileName}");
+            report($"  {(result == CompileResult.Compiled ? "compiled" : "FAILED  ")} {compile.File.FileName}");
 
-                return new CompiledProgram(compile, result, screens.GetValueOrDefault(compile, string.Empty));
-            })
-            .ToList();
-
-        return new CompileOutcome(programs, plan.Skipped);
+            return new CompiledProgram(compile, result, screens.GetValueOrDefault(compile, string.Empty));
+        })];
     }
 
     /// <summary>
@@ -122,13 +82,13 @@ public sealed class ProgressEditorCompiler : IProgramCompiler
     /// clear the buffer. That mirrors the manual procedure, where F4 is what
     /// makes the window ready to accept a statement.
     /// </remarks>
-    private Dictionary<PlannedCompile, string> RunEditor(
+    private Dictionary<PlannedQrfCompile, string> RunEditor(
         CompilePlan plan,
         QrfCompileSettings recipe,
         SshEndpoint endpoint,
         Action<string> report)
     {
-        var screens = new Dictionary<PlannedCompile, string>();
+        var screens = new Dictionary<PlannedQrfCompile, string>();
 
         // Disposing the shell closes the channel, which is how this editor is
         // left - it has no exit key here, and the manual procedure is to close
@@ -142,7 +102,7 @@ public sealed class ProgressEditorCompiler : IProgramCompiler
         shell.Send(recipe.EditorCommand + ProgressKeys.Enter);
         shell.ReadUntilIdle(SettleFor, StepTimeout);
 
-        foreach (var compile in plan.Compiles)
+        foreach (var compile in plan.Qrf)
         {
             report($"  {compile.Statement}");
 
@@ -163,12 +123,12 @@ public sealed class ProgressEditorCompiler : IProgramCompiler
     /// Whether a compile happened, from the two timestamps.
     /// </summary>
     /// <remarks>
-    /// A <c>.r</c> that did not exist and now does counts, which is the ordinary
+    /// A result that did not exist and now does counts, which is the ordinary
     /// case for a brand new report. Everything else needs the timestamp to have
-    /// advanced: Progress leaves the old <c>.r</c> exactly as it was when a
-    /// compile fails, so "unchanged" and "failed" are the same observation.
+    /// advanced: Progress leaves the old output exactly as it was when a compile
+    /// fails, so "unchanged" and "failed" are the same observation.
     /// </remarks>
-    private static bool Moved(DateTimeOffset? before, DateTimeOffset? after) =>
+    internal static bool Moved(DateTimeOffset? before, DateTimeOffset? after) =>
         after is not null && (before is null || after > before);
 
     /// <summary>
@@ -182,7 +142,7 @@ public sealed class ProgressEditorCompiler : IProgramCompiler
     /// </remarks>
     private static void VerifySourcesExist(CompilePlan plan, ISftpSession session)
     {
-        var missing = plan.Compiles
+        var missing = plan.Qrf
             .Where(compile => !session.Exists(compile.RemoteFile))
             .Select(compile => compile.RemoteFile)
             .ToList();

@@ -15,7 +15,7 @@ public sealed class CompilePlanTests
     [Fact]
     public void A_qrf_report_is_compiled_into_its_own_directory()
     {
-        var compile = Assert.Single(Plan(Qrf("rep.p")).Compiles);
+        var compile = Assert.Single(Plan(Qrf("rep.p")).Qrf);
 
         Assert.Equal($"{QrfPath}/rep.p", compile.RemoteFile);
         Assert.Equal(
@@ -28,7 +28,7 @@ public sealed class CompilePlanTests
     {
         // This is the whole verification mechanism: get it wrong and every
         // compile reports failure, or worse, checks a file nobody is writing.
-        var compile = Assert.Single(Plan(Qrf("rep.p")).Compiles);
+        var compile = Assert.Single(Plan(Qrf("rep.p")).Qrf);
 
         Assert.Equal($"{QrfPath}/rep.r", compile.RemoteResult);
     }
@@ -39,7 +39,7 @@ public sealed class CompilePlanTests
         var environment = Environment(qrf: "/appl/v8.2/reports");
 
         var compile = Assert.Single(
-            CompilePlan.Create(Ticket(Qrf("noext")), environment, "pilot").Compiles);
+            CompilePlan.Create(Ticket(Qrf("noext")), environment, "pilot").Qrf);
 
         Assert.Equal("/appl/v8.2/reports/noext.r", compile.RemoteResult);
     }
@@ -50,25 +50,27 @@ public sealed class CompilePlanTests
         var environment = Environment(qrf: QrfPath + "/");
 
         var compile = Assert.Single(
-            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Compiles);
+            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Qrf);
 
         Assert.Equal($"{QrfPath}/rep.p", compile.RemoteFile);
         Assert.DoesNotContain("//", compile.Statement, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_src_program_is_skipped_with_a_reason_rather_than_dropped()
+    public void A_src_program_is_skipped_with_a_reason_when_the_environment_cannot_build_it()
     {
         // The dangerous outcome is not an error - it is an operator believing a
-        // ticket is deployed when half of it was never built.
-        var plan = Plan(Qrf("rep.p"), Src("prog.p"));
+        // ticket is deployed when half of it was never built. This environment
+        // is configured for QRF only.
+        var plan = Plan(Qrf("rep.p"), Src("xxprog.p"));
 
-        Assert.Single(plan.Compiles);
+        Assert.Single(plan.Qrf);
+        Assert.Empty(plan.Src);
 
         var skipped = Assert.Single(plan.Skipped);
 
-        Assert.Equal("prog.p", skipped.File.FileName);
-        Assert.Contains("not implemented", skipped.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("xxprog.p", skipped.File.FileName);
+        Assert.Contains("compile.src", skipped.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -99,7 +101,7 @@ public sealed class CompilePlanTests
             recipe: new QrfCompileSettings("editor", "COMPILE {remoteFile} SAVE INTO {remoteDirectory} XREF x."));
 
         var compile = Assert.Single(
-            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Compiles);
+            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Qrf);
 
         Assert.Equal($"COMPILE {QrfPath}/rep.p SAVE INTO {QrfPath} XREF x.", compile.Statement);
     }

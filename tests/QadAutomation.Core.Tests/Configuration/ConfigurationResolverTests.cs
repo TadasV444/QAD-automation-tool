@@ -258,7 +258,7 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
-    public void A_src_recipe_needs_a_manifest_a_directory_and_commands()
+    public void A_src_recipe_needs_a_manifest_a_directory_a_command_and_languages()
     {
         var file = FileWith(client => client.Defaults!.Compile =
             new CompileSection { Src = new SrcCompileSection() });
@@ -267,7 +267,52 @@ public sealed class ConfigurationResolverTests
 
         Assert.Contains("'manifestPath'", message);
         Assert.Contains("'workingDirectory'", message);
-        Assert.Contains("'commands'", message);
+        Assert.Contains("'command'", message);
+        Assert.Contains("'languages'", message);
+    }
+
+    [Fact]
+    public void A_src_command_that_names_no_language_is_refused()
+    {
+        // Without the placeholder the same language compiles twice, the other
+        // one never builds, and the .r check calls it a failure - correctly,
+        // but with nothing pointing at the actual mistake.
+        var file = FileWith(client => client.Defaults!.Compile = new CompileSection
+        {
+            Src = new SrcCompileSection
+            {
+                ManifestPath = "/qad/global/utcompil.wrk",
+                WorkingDirectory = "/qad/global",
+                Command = "./compile us devl",
+                Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+            }
+        });
+
+        Assert.Contains("{language}", ResolveError(file));
+    }
+
+    [Fact]
+    public void A_src_recipe_maps_each_language_to_where_its_output_lands()
+    {
+        var file = FileWith(client => client.Defaults!.Compile = new CompileSection
+        {
+            Src = new SrcCompileSection
+            {
+                ManifestPath = "/qad/global/utcompil.wrk",
+                WorkingDirectory = "/qad/global",
+                Command = "./compile {language} devl",
+                Languages = new Dictionary<string, string>
+                {
+                    ["lt"] = "/qad/global/lt",
+                    ["us"] = "/qad/global/us"
+                }
+            }
+        });
+
+        var src = Resolve(file).Clients[0].Environments[0].Compile.Src!;
+
+        Assert.Equal("./compile lt devl", src.CommandFor("lt"));
+        Assert.Equal("/qad/global/us", src.Languages["us"]);
     }
 
     [Fact]
@@ -284,7 +329,8 @@ public sealed class ConfigurationResolverTests
                     {
                         ManifestPath = "/qad/global/utcompil.wrk",
                         WorkingDirectory = "/qad/global",
-                        Commands = ["./compile us prod"]
+                        Command = "./compile {language} prod",
+                        Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
                     }
                 }
             }

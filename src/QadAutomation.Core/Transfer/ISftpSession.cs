@@ -47,6 +47,17 @@ public interface ISftpSession : IDisposable
     /// <summary>Writes a local file to <paramref name="remotePath"/>, overwriting.</summary>
     void Upload(string localPath, string remotePath);
 
+    /// <summary>
+    /// Writes <paramref name="contents"/> straight to <paramref name="remotePath"/>.
+    /// </summary>
+    /// <remarks>
+    /// For the SRC compile manifest, which the tool composes rather than reads
+    /// off disk. The alternative was writing a temporary local file and reusing
+    /// <see cref="Upload"/>, which would mean a file on the operator's machine to
+    /// clean up on every failure path in exchange for nothing.
+    /// </remarks>
+    void WriteText(string remotePath, string contents);
+
     /// <summary>Names of the entries in a remote directory.</summary>
     IReadOnlyList<string> List(string remoteDirectory);
 

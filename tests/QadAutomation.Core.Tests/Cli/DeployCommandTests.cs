@@ -62,7 +62,7 @@ public sealed class DeployCommandTests : IDisposable
     [Fact]
     public void The_whole_workflow_runs_in_one_vpn_session()
     {
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         var (exitCode, output, _) = Run("deploy", "pilot", "TEST", "9999555");
 
@@ -145,7 +145,7 @@ public sealed class DeployCommandTests : IDisposable
         Directory.CreateDirectory(Path.Combine(_root, "tasks", "Ticket #9999555", "SRC"));
         File.WriteAllText(Path.Combine(_root, "tasks", "Ticket #9999555", "SRC", "prog_a.p"), "SRC A");
 
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         var (exitCode, output, _) = Run("deploy", "pilot", "TEST", "9999555");
 
@@ -160,7 +160,7 @@ public sealed class DeployCommandTests : IDisposable
     [Fact]
     public void The_password_never_appears_in_the_output()
     {
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         var (_, output, error) = Run("deploy", "pilot", "TEST", "9999555");
 
