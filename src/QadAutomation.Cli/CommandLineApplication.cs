@@ -162,6 +162,26 @@ public sealed class CommandLineApplication
                                 TakeBackups: !args.HasFlag(CommandLineParser.NoBackupFlag)))
                     : ExitCode.UsageError;
 
+            case "deploy":
+                return Expect(args, 3, "qad deploy <client> <environment> <ticket> [--dry-run] [--yes] [--no-backup]")
+                    ? new DeployCommand(
+                            CreateLoader(args),
+                            CreateTicketReader(args),
+                            _connectors,
+                            new FileUploader(_sftp),
+                            new ProgressEditorCompiler(_shells, _sftp),
+                            _output,
+                            _error)
+                        .Execute(
+                            args.Target!,
+                            args.Argument(1)!,
+                            args.Argument(2)!,
+                            new DeployOptions(
+                                DryRun: args.HasFlag(CommandLineParser.DryRunFlag),
+                                Confirmed: args.HasFlag(CommandLineParser.YesFlag),
+                                TakeBackups: !args.HasFlag(CommandLineParser.NoBackupFlag)))
+                    : ExitCode.UsageError;
+
             case "compile":
                 return Expect(args, 3, "qad compile <client> <environment> <ticket> [--dry-run] [--yes]")
                     ? new CompileCommand(
@@ -271,6 +291,8 @@ public sealed class CommandLineApplication
                                             Upload a ticket's SRC/QRF files
               qad compile <client> <environment> <ticket>
                                             Compile a ticket's QRF reports
+              qad deploy <client> <environment> <ticket>
+                                            Upload then compile, in one VPN session
               qad help                      Show this help
 
             Options:
@@ -284,6 +306,7 @@ public sealed class CommandLineApplication
               qad upload  pilot TEST 9999555 --dry-run  see what would be sent
               qad upload  pilot TEST 9999555            send it
               qad compile pilot TEST 9999555            build it on the server
+              qad deploy  pilot TEST 9999555            both, in one go
 
             Configuration is read from, in order:
               1. --config <path>
@@ -292,8 +315,9 @@ public sealed class CommandLineApplication
               4. config.json next to the executable
               5. %APPDATA%\QadAutomationTool\config.json
 
-            'vpn', 'check', 'upload' and 'compile' touch the network; 'check' only
-            reads. Everything else is local, and '--dry-run' connects to nothing.
+            'vpn', 'check', 'upload', 'compile' and 'deploy' touch the network;
+            'check' only reads. Everything else is local, and '--dry-run'
+            connects to nothing.
             """);
     }
 }

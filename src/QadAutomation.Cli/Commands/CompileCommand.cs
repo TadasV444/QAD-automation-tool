@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using QadAutomation.Core.Compile;
 using QadAutomation.Core.Configuration;
 using QadAutomation.Core.Tickets;
@@ -90,79 +91,35 @@ public sealed class CompileCommand
 
         var outcome = _compiler.Compile(plan, environment.Ssh, line => _output.WriteLine(line));
 
-        return WriteOutcome(outcome);
+        return WriteOutcome(_output, _error, outcome);
     }
 
     private void WritePlan(ClientProfile client, CompilePlan plan)
     {
-        _output.WriteLine($"Ticket      : {plan.TicketName}");
-        _output.WriteLine($"Client      : {client.DisplayName} [{client.Id}]");
-
-        var marker = plan.IsProduction ? "   ** PRODUCTION **" : string.Empty;
-        _output.WriteLine($"Environment : {plan.Environment.Name}{marker}");
-        _output.WriteLine($"Server      : {plan.Environment.Ssh.Username}@{plan.Environment.Ssh.Host}:{plan.Environment.Ssh.Port}");
-        _output.WriteLine();
-
-        if (plan.Compiles.Count > 0)
-        {
-            _output.WriteLine($"{plan.Compiles.Count} program(s) to compile:");
-            _output.WriteLine();
-
-            foreach (var compile in plan.Compiles)
-            {
-                _output.WriteLine($"  [{compile.Kind.ToString().ToUpperInvariant()}] {compile.File.FileName}");
-
-                // The statement is shown in full because it is what will
-                // actually be typed. A wrong path here is the difference
-                // between compiling and compiling the wrong thing.
-                _output.WriteLine($"      {compile.Statement}");
-                _output.WriteLine($"      -> {compile.RemoteResult}");
-            }
-
-            _output.WriteLine();
-        }
-
-        WriteSkips(plan.Skipped);
+        PlanDisplay.WriteHeader(_output, client, plan.TicketName, plan.Environment);
+        PlanDisplay.WriteCompilePlan(_output, plan);
     }
 
-    private void WriteSkips(IReadOnlyList<SkippedProgram> skipped)
+    internal static int WriteOutcome(TextWriter output, TextWriter error, CompileOutcome outcome)
     {
-        if (skipped.Count == 0)
-        {
-            return;
-        }
-
-        _output.WriteLine($"{skipped.Count} program(s) will NOT be compiled:");
-
-        foreach (var skip in skipped)
-        {
-            _output.WriteLine($"  [{skip.File.Kind.ToString().ToUpperInvariant()}] {skip.File.FileName}");
-            _output.WriteLine($"      {skip.Reason}");
-        }
-
-        _output.WriteLine();
-    }
-
-    private int WriteOutcome(CompileOutcome outcome)
-    {
-        _output.WriteLine();
-        _output.WriteLine($"Done - {outcome.CompiledCount} compiled, {outcome.FailedCount} failed.");
+        output.WriteLine();
+        output.WriteLine($"Done - {outcome.CompiledCount} compiled, {outcome.FailedCount} failed.");
 
         foreach (var failure in outcome.Failures)
         {
-            _error.WriteLine();
-            _error.WriteLine($"{failure.Planned.File.FileName} did not compile.");
-            _error.WriteLine($"  {failure.Planned.RemoteResult} was not updated.");
+            error.WriteLine();
+            error.WriteLine($"{failure.Planned.File.FileName} did not compile.");
+            error.WriteLine($"  {failure.Planned.RemoteResult} was not updated.");
 
             var screen = Readable(failure.Screen);
 
             if (screen.Count > 0)
             {
-                _error.WriteLine("  The editor showed:");
+                error.WriteLine("  The editor showed:");
 
                 foreach (var line in screen)
                 {
-                    _error.WriteLine($"    {line}");
+                    error.WriteLine($"    {line}");
                 }
             }
         }
@@ -181,10 +138,23 @@ public sealed class CompileCommand
     /// Turns a captured terminal screen into something worth printing.
     /// </summary>
     /// <remarks>
-    /// The raw capture is full of cursor-positioning escape sequences and blank
-    /// padding rows. Stripping them is presentation only - nothing here has any
-    /// say in whether the compile succeeded, so an imperfect filter costs
-    /// readability and never correctness.
+    /// <para>
+    /// The editor positions its cursor rather than emitting newlines, so the raw
+    /// capture arrives as one long string interleaved with escape sequences. Each
+    /// sequence becomes a line break here - that is what recovers the structure,
+    /// since a jump to a new row is the only thing standing in for a newline.
+    /// </para>
+    /// <para>
+    /// It also draws a box around errors using the DEC line-drawing character
+    /// set, which arrives as runs of <c>q</c> with <c>x</c> down the sides. Those
+    /// rows carry nothing, so they go.
+    /// </para>
+    /// <para>
+    /// All of this is presentation. Nothing here has any say in whether the
+    /// compile succeeded - that was settled by the <c>.r</c> timestamp before
+    /// this method is ever called - so an imperfect filter costs readability and
+    /// never correctness.
+    /// </para>
     /// </remarks>
     private static IReadOnlyList<string> Readable(string screen)
     {
@@ -193,15 +163,59 @@ public sealed class CompileCommand
             return [];
         }
 
-        var stripped = new string([.. screen.Where(c => !char.IsControl(c) || c is '\n' or '\r')]);
-
-        return [.. stripped
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .Where(line => line.Length > 0)
+        return [.. EscapeSequence.Split(screen)
+            .Select(Clean)
+            // Three characters, because splitting on escape sequences chops the
+            // box's "<OK>" button into fragments like "<" and "K>". Progress
+            // messages are whole sentences, so nothing real is this short.
+            .Where(line => line.Length >= 3)
             .Distinct(StringComparer.Ordinal)
             .Take(20)];
     }
+
+    /// <summary>
+    /// ANSI escape sequences: cursor moves, colour, and character-set selection.
+    /// </summary>
+    /// <remarks>
+    /// Non-capturing: <see cref="Regex.Split(string)"/> returns the contents of
+    /// capturing groups as elements, which would put the escape sequences
+    /// straight back into the output it is meant to remove them from.
+    /// </remarks>
+    private static readonly Regex EscapeSequence =
+        new(@"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Removes the box the editor draws around an error, leaving its contents.
+    /// </summary>
+    /// <remarks>
+    /// Progress draws with the DEC line-drawing set, which arrives as ASCII:
+    /// runs of <c>q</c> for horizontal rules, <c>x</c> for the sides, and
+    /// <c>l m k j</c> for the corners. A rule row collapses to nothing and is
+    /// dropped by the length filter; a titled row like
+    /// <c>lqqq Error qqqk</c> collapses to <c>Error</c>, which is worth keeping.
+    /// </remarks>
+    private static string Clean(string fragment)
+    {
+        var text = HorizontalRule.Replace(
+            new string([.. fragment.Where(c => !char.IsControl(c))]), " ").Trim();
+
+        if (text.Length > 0 && text[0] is 'l' or 'm' or 'x' or 't')
+        {
+            text = text[1..];
+        }
+
+        if (text.Length > 0 && text[^1] is 'k' or 'j' or 'x' or 'u')
+        {
+            text = text[..^1];
+        }
+
+        return text.Trim();
+    }
+
+    /// <summary>
+    /// Three or more, so a real word ending in <c>qq</c> is never touched.
+    /// </summary>
+    private static readonly Regex HorizontalRule = new("q{3,}", RegexOptions.Compiled);
 }
 
 /// <summary>Switches affecting how a compile runs.</summary>
