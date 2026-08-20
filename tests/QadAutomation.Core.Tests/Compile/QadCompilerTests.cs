@@ -6,20 +6,20 @@ using QadAutomation.Core.Transfer;
 
 namespace QadAutomation.Core.Tests.Compile;
 
-public sealed class ProgressEditorCompilerTests
+public sealed class QadCompilerTests
 {
     private const string QrfPath = "/appl/desktop/test/reports";
 
     private readonly FakeSftpServer _server = new FakeSftpServer().WithDirectory(QrfPath);
     private readonly FakeSshShell _shell = new();
 
-    public ProgressEditorCompilerTests() => _shell.Server = _server;
+    public QadCompilerTests() => _shell.Server = _server;
 
     [Fact]
     public void A_compile_that_updates_the_r_file_is_a_success()
     {
         Uploaded("rep.p");
-        _shell.Produces.Add($"{QrfPath}/rep.r");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
 
         var outcome = Compile("rep.p");
 
@@ -46,7 +46,7 @@ public sealed class ProgressEditorCompilerTests
     public void A_first_time_compile_counts_even_though_there_was_no_r_file()
     {
         Uploaded("brand_new.p");
-        _shell.Produces.Add($"{QrfPath}/brand_new.r");
+        _shell.Produces.Add([$"{QrfPath}/brand_new.r"]);
 
         Assert.Equal(1, Compile("brand_new.p").CompiledCount);
     }
@@ -57,7 +57,7 @@ public sealed class ProgressEditorCompilerTests
         // A compiler that scraped the screen would report failure here. The .r
         // moved, so the compile happened - whatever Progress chose to print.
         Uploaded("rep.p");
-        _shell.Produces.Add($"{QrfPath}/rep.r");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
         _shell.Screen = "** Unable to understand after -- \"error\". (247)";
 
         Assert.Equal(1, Compile("rep.p").CompiledCount);
@@ -67,7 +67,7 @@ public sealed class ProgressEditorCompilerTests
     public void The_editor_is_opened_once_and_each_report_gets_its_own_statement()
     {
         Uploaded("a.p", "b.p");
-        _shell.Produces.AddRange([$"{QrfPath}/a.r", $"{QrfPath}/b.r"]);
+        _shell.Produces.AddRange([[$"{QrfPath}/a.r"], [$"{QrfPath}/b.r"]]);
 
         Compile("a.p", "b.p");
 
@@ -83,7 +83,7 @@ public sealed class ProgressEditorCompilerTests
     public void The_buffer_is_cleared_before_each_statement_and_run_after_it()
     {
         Uploaded("a.p", "b.p");
-        _shell.Produces.AddRange([$"{QrfPath}/a.r", $"{QrfPath}/b.r"]);
+        _shell.Produces.AddRange([[$"{QrfPath}/a.r"], [$"{QrfPath}/b.r"]]);
 
         Compile("a.p", "b.p");
 
@@ -105,7 +105,7 @@ public sealed class ProgressEditorCompilerTests
         _server.WithFile($"{QrfPath}/b.r", "STALE");
 
         // b produces nothing: its .r stays exactly where it was.
-        _shell.Produces.AddRange([$"{QrfPath}/a.r", null, $"{QrfPath}/c.r"]);
+        _shell.Produces.AddRange([[$"{QrfPath}/a.r"], [], [$"{QrfPath}/c.r"]]);
 
         var outcome = Compile("a.p", "b.p", "c.p");
 
@@ -132,7 +132,7 @@ public sealed class ProgressEditorCompilerTests
     {
         // It has no exit key, so closing the channel is the only way out.
         Uploaded("rep.p");
-        _shell.Produces.Add($"{QrfPath}/rep.r");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
 
         Compile("rep.p");
 
@@ -143,7 +143,7 @@ public sealed class ProgressEditorCompilerTests
     public void Skipped_programs_survive_into_the_outcome()
     {
         Uploaded("rep.p");
-        _shell.Produces.Add($"{QrfPath}/rep.r");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
 
         var ticket = new TicketFolder("Ticket 9999555", @"C:\tasks\T",
         [
@@ -151,7 +151,7 @@ public sealed class ProgressEditorCompilerTests
             new ProgramFile(ProgramKind.Src, @"C:\tasks\T\SRC\prog.p")
         ]);
 
-        var outcome = new ProgressEditorCompiler(_shell, _server)
+        var outcome = new QadCompiler(_shell, _server)
             .Compile(CompilePlan.Create(ticket, Environment(), "pilot"), Endpoint);
 
         Assert.Equal(1, outcome.CompiledCount);
@@ -162,7 +162,7 @@ public sealed class ProgressEditorCompilerTests
     [Fact]
     public void An_empty_plan_does_not_connect()
     {
-        var outcome = new ProgressEditorCompiler(_shell, _server).Compile(
+        var outcome = new QadCompiler(_shell, _server).Compile(
             CompilePlan.Create(new TicketFolder("T", "p", []), Environment(), "pilot"),
             Endpoint);
 
@@ -175,11 +175,11 @@ public sealed class ProgressEditorCompilerTests
     public void The_password_never_appears_in_the_progress_output()
     {
         Uploaded("rep.p");
-        _shell.Produces.Add($"{QrfPath}/rep.r");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
 
         var lines = new List<string>();
 
-        new ProgressEditorCompiler(_shell, _server)
+        new QadCompiler(_shell, _server)
             .Compile(Plan("rep.p"), Endpoint, lines.Add);
 
         Assert.DoesNotContain(lines, line => line.Contains("hunter2", StringComparison.Ordinal));
@@ -199,7 +199,7 @@ public sealed class ProgressEditorCompilerTests
     }
 
     private CompileOutcome Compile(params string[] names) =>
-        new ProgressEditorCompiler(_shell, _server).Compile(Plan(names), Endpoint);
+        new QadCompiler(_shell, _server).Compile(Plan(names), Endpoint);
 
     private static CompilePlan Plan(params string[] names) =>
         CompilePlan.Create(

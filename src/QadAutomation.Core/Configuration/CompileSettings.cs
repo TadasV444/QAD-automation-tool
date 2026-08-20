@@ -68,23 +68,45 @@ public sealed record QrfCompileSettings(string EditorCommand, string StatementTe
 /// Compiling SRC programs through the batch compile script.
 /// </summary>
 /// <remarks>
-/// <b>Not yet verified against a real server.</b> The shape comes from the
-/// operator's description of the manual procedure; no SRC compile has been run
-/// through this tool or watched closely enough to know what failure looks like.
-/// It is modelled now so the config format does not have to change later, and
-/// the compiler for it is deliberately unwritten.
+/// <para>
+/// Nothing like the QRF procedure. The programs to build are listed in a file on
+/// the server, and then one command per user language compiles the whole list -
+/// so this is per-batch where QRF is per-file, and it has a step, writing the
+/// manifest, that QRF has no equivalent of.
+/// </para>
+/// <para>
+/// A single SRC program produces <b>two</b> compiled results, one per language,
+/// in different directory trees. That is why the languages are a map rather than
+/// a list of command strings: each entry supplies both the command to run and
+/// the place to check afterwards, so the two cannot drift apart. Kept as two
+/// separate settings they could, and the failure mode would be a compile
+/// reported against a directory nothing writes to.
+/// </para>
 /// </remarks>
 /// <param name="ManifestPath">
-/// Remote file listing the programs to compile, one name per line, overwritten
-/// each run. Note it is a fixed shared path: two people compiling at the same
-/// time would overwrite each other's list.
+/// Remote file listing the programs to compile, one bare filename per line,
+/// overwritten each run. Note it is a fixed shared path: two people compiling at
+/// the same time would overwrite each other's list.
 /// </param>
 /// <param name="WorkingDirectory">Directory the commands are run from.</param>
-/// <param name="Commands">
-/// Run in order after the manifest is written, e.g. <c>./compile lt band</c>
-/// then <c>./compile us band</c> - once per user language.
+/// <param name="CommandTemplate">
+/// Run once per language with <c>{language}</c> substituted, e.g.
+/// <c>./compile {language} test</c>. The environment is part of the template
+/// rather than a separate field because it is the script's own argument and its
+/// spelling (<c>test</c>, <c>euro</c>) is the site's, not this tool's.
+/// </param>
+/// <param name="Languages">
+/// Language code to the root directory its compiled output lands under. The
+/// results themselves sit one level deeper, in a folder named after the
+/// program's prefix.
 /// </param>
 public sealed record SrcCompileSettings(
     string ManifestPath,
     string WorkingDirectory,
-    IReadOnlyList<string> Commands);
+    string CommandTemplate,
+    IReadOnlyDictionary<string, string> Languages)
+{
+    /// <summary>The command to run for one language.</summary>
+    public string CommandFor(string language) =>
+        CommandTemplate.Replace("{language}", language, StringComparison.Ordinal);
+}

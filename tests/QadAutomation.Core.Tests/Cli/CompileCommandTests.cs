@@ -87,7 +87,7 @@ public sealed class CompileCommandTests : IDisposable
     public void A_real_run_types_the_statement_and_reports_the_result()
     {
         Uploaded("rep_b.p");
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         var (exitCode, output, _) = Run("compile", "pilot", "TEST", "9999555");
 
@@ -147,7 +147,7 @@ public sealed class CompileCommandTests : IDisposable
         File.WriteAllText(Path.Combine(_root, "tasks", "Ticket #9999555", "SRC", "prog_a.p"), "SRC A");
 
         Uploaded("rep_b.p");
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         var (exitCode, output, _) = Run("compile", "pilot", "TEST", "9999555");
 
@@ -172,7 +172,7 @@ public sealed class CompileCommandTests : IDisposable
     public void The_vpn_is_brought_up_and_taken_back_down()
     {
         Uploaded("rep_b.p");
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         Run("compile", "pilot", "TEST", "9999555");
 
@@ -206,7 +206,7 @@ public sealed class CompileCommandTests : IDisposable
     public void The_password_never_appears_in_the_output()
     {
         Uploaded("rep_b.p");
-        _shell.Produces.Add($"{QrfPath}/rep_b.r");
+        _shell.Produces.Add([$"{QrfPath}/rep_b.r"]);
 
         var (_, output, error) = Run("compile", "pilot", "TEST", "9999555");
 

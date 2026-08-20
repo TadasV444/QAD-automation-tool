@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Sockets;
+using System.Text;
 using QadAutomation.Core.Configuration;
 using Renci.SshNet;
 using Renci.SshNet.Common;
@@ -57,6 +58,20 @@ public sealed class SshNetSftpSession : ISftpSession
                 _client.UploadFile(stream, remotePath, canOverride: true);
             },
             $"upload '{Path.GetFileName(localPath)}' to '{remotePath}'");
+
+    /// <inheritdoc />
+    public void WriteText(string remotePath, string contents) =>
+        Guard(
+            () =>
+            {
+                // Newlines are written as-is. The manifest is read by a script on
+                // a Unix host, so a Windows CRLF would leave a stray carriage
+                // return on every filename - and the compile would look for
+                // programs that do not exist while reporting nothing useful.
+                using var stream = new MemoryStream(Encoding.ASCII.GetBytes(contents));
+                _client.UploadFile(stream, remotePath, canOverride: true);
+            },
+            $"write '{remotePath}'");
 
     /// <inheritdoc />
     public IReadOnlyList<string> List(string remoteDirectory) =>

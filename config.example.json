@@ -74,14 +74,26 @@
           },
 
           // SRC programs: write the manifest, then run the compile script once
-          // per user language. NOT yet verified against a real server.
+          // per user language.
           "src": {
+            // Overwritten each run with one bare filename per line. A fixed
+            // shared path - two people compiling at once would clash.
             "manifestPath": "/qad/global/utcompil.wrk",
             "workingDirectory": "/qad/global",
-            "commands": [
-              "./compile lt live",
-              "./compile us live"
-            ]
+
+            // Run once per language below. The environment is part of the
+            // command because it is the script's own argument.
+            "command": "./compile {language} live",
+
+            // Where each language's compiled output lands. The .r files sit one
+            // level deeper, in a folder named after the program's first two
+            // letters - so xxfoo.p becomes /qad/global/lt/xx/xxfoo.r and
+            // /qad/global/us/xx/xxfoo.r, and BOTH must build for the program to
+            // count as compiled.
+            "languages": {
+              "lt": "/qad/global/lt",
+              "us": "/qad/global/us"
+            }
           }
         }
       },

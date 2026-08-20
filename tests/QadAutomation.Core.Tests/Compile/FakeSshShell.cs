@@ -49,15 +49,17 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
     public FakeSftpServer? Server { get; set; }
 
     /// <summary>
-    /// What each F1 produces, in order: a remote <c>.r</c> path, or <c>null</c>
-    /// for a compile that fails and leaves the old file alone.
+    /// What each F1 produces, in order: the remote paths it writes, or an empty
+    /// set for a compile that fails and leaves the old files alone.
     /// </summary>
     /// <remarks>
     /// Per-press rather than one setting for the whole session, so a test can
-    /// have the second of three reports fail - which is the case where the
-    /// compiler could plausibly attribute the wrong screen to the wrong file.
+    /// have the second of three reports fail - the case where a compiler could
+    /// plausibly attribute the wrong screen to the wrong file. A <i>set</i> per
+    /// press rather than a single path because one run of the SRC script builds
+    /// the whole manifest at once.
     /// </remarks>
-    public List<string?> Produces { get; } = [];
+    public List<string[]> Produces { get; } = [];
 
     public ISshShell Open(SshEndpoint endpoint)
     {
@@ -74,18 +76,35 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
     {
         _sent.Add(text);
 
-        if (text != ProgressKeys.Go)
+        if (!IsCompileTrigger(text))
         {
             return;
         }
 
         var index = _goCount++;
 
-        if (Server is not null && index < Produces.Count && Produces[index] is { } path)
+        if (Server is null || index >= Produces.Count)
+        {
+            return;
+        }
+
+        foreach (var path in Produces[index])
         {
             Server.Touch(path);
         }
     }
+
+    /// <summary>
+    /// The two ways this site starts a compile: F1 in the editor, and running
+    /// the batch script from the shell.
+    /// </summary>
+    /// <remarks>
+    /// <c>cd</c> and the editor's own launch command are deliberately not
+    /// triggers - counting them would shift every entry in
+    /// <see cref="Produces"/> and make the tests pass for the wrong reason.
+    /// </remarks>
+    private static bool IsCompileTrigger(string text) =>
+        text == ProgressKeys.Go || text.StartsWith("./", StringComparison.Ordinal);
 
     public string ReadUntilIdle(TimeSpan idleFor, TimeSpan timeout) => Screen;
 

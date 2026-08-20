@@ -321,11 +321,12 @@ public sealed class ConfigurationResolver
 
         var manifestPath = Trimmed(src.ManifestPath);
         var workingDirectory = Trimmed(src.WorkingDirectory);
+        var command = Trimmed(src.Command);
 
-        var commands = src.Commands?
-            .Where(c => !string.IsNullOrWhiteSpace(c))
-            .Select(c => c.Trim())
-            .ToList() ?? [];
+        var languages = src.Languages?
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+            .ToDictionary(pair => pair.Key.Trim(), pair => pair.Value.Trim(), StringComparer.Ordinal)
+            ?? [];
 
         if (manifestPath is null)
         {
@@ -337,14 +338,28 @@ public sealed class ConfigurationResolver
             errors.Add($"{label}: 'compile.src' needs a 'workingDirectory' for the compile script.");
         }
 
-        if (commands.Count == 0)
+        if (command is null)
         {
-            errors.Add($"{label}: 'compile.src' needs at least one entry in 'commands'.");
+            errors.Add($"{label}: 'compile.src' needs a 'command', e.g. './compile {{language}} test'.");
+        }
+        else if (!command.Contains("{language}", StringComparison.Ordinal))
+        {
+            // Without the placeholder the same language would be compiled once
+            // per entry, and the other language's .r would never move - which
+            // the verification would correctly, but confusingly, call a failure.
+            errors.Add($"{label}: 'compile.src.command' must contain '{{language}}'.");
         }
 
-        return manifestPath is null || workingDirectory is null || commands.Count == 0
+        if (languages.Count == 0)
+        {
+            errors.Add(
+                $"{label}: 'compile.src' needs at least one entry in 'languages', " +
+                "mapping a language code to the directory its compiled output lands under.");
+        }
+
+        return manifestPath is null || workingDirectory is null || command is null || languages.Count == 0
             ? null
-            : new SrcCompileSettings(manifestPath, workingDirectory, commands);
+            : new SrcCompileSettings(manifestPath, workingDirectory, command, languages);
     }
 
     private static string? Trimmed(string? value) =>

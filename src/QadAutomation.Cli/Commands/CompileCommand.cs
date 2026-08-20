@@ -109,13 +109,20 @@ public sealed class CompileCommand
         {
             error.WriteLine();
             error.WriteLine($"{failure.Planned.File.FileName} did not compile.");
-            error.WriteLine($"  {failure.Planned.RemoteResult} was not updated.");
+
+            // Every expected result, not just the first. A SRC program builds
+            // once per language, and "lt moved but us did not" is the state
+            // worth seeing spelled out.
+            foreach (var result in failure.Planned.RemoteResults)
+            {
+                error.WriteLine($"  {result} was not updated.");
+            }
 
             var screen = Readable(failure.Screen);
 
             if (screen.Count > 0)
             {
-                error.WriteLine("  The editor showed:");
+                error.WriteLine("  The server showed:");
 
                 foreach (var line in screen)
                 {

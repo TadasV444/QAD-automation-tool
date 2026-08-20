@@ -111,6 +111,8 @@ internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
         WithFile(remotePath, File.ReadAllText(localPath));
     }
 
+    public void WriteText(string remotePath, string contents) => WithFile(remotePath, contents);
+
     public DateTimeOffset? LastWriteTime(string remotePath) =>
         _times.TryGetValue(remotePath, out var time) ? time : null;
 
