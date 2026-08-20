@@ -161,16 +161,24 @@ public sealed class UploadCommandTests : IDisposable
     }
 
     [Fact]
-    public void An_existing_remote_file_is_backed_up_and_the_undo_is_printed()
+    public void An_existing_remote_file_is_backed_up_locally_and_the_undo_is_printed()
     {
         _server.WithFile($"{SrcPath}/prog_a.p", "PREVIOUS");
 
         var (_, output, _) = Run("upload", "pilot", "TEST", "9999555");
 
         Assert.Contains("1 replaced", output);
-        Assert.Contains("To undo", output);
-        Assert.Contains("mv '", output);
-        Assert.Contains(_server.Files.Values, v => v == "PREVIOUS");
+        Assert.Contains("Previous versions saved to", output);
+        Assert.Contains("copy /Y", output);
+
+        // The undo needs both halves: restore the file, then re-upload it.
+        Assert.Contains("qad upload pilot TEST", output);
+
+        var backup = Assert.Single(Directory.GetFiles(BackupRoot, "prog_a.p", SearchOption.AllDirectories));
+        Assert.Equal("PREVIOUS", File.ReadAllText(backup));
+
+        // And the server keeps no copy of its own.
+        Assert.DoesNotContain(_server.Files.Values, v => v == "PREVIOUS");
     }
 
     [Fact]
@@ -181,6 +189,7 @@ public sealed class UploadCommandTests : IDisposable
         var (_, output, _) = Run("upload", "pilot", "TEST", "9999555", "--no-backup");
 
         Assert.DoesNotContain("To undo", output);
+        Assert.False(Directory.Exists(BackupRoot));
         Assert.DoesNotContain(_server.Files.Values, v => v == "PREVIOUS");
     }
 
@@ -246,6 +255,13 @@ public sealed class UploadCommandTests : IDisposable
 
         Assert.DoesNotContain("hunter2", output + error);
     }
+
+    /// <summary>
+    /// The ticket's backup folder. Its per-run sub-folder is named with the real
+    /// clock - this command builds its own uploader - so tests search under here
+    /// rather than pinning a timestamp.
+    /// </summary>
+    private string BackupRoot => Path.Combine(_root, "tasks", "Ticket #9999555", "_backup");
 
     private (int ExitCode, string Output, string Error) Run(params string[] command)
     {

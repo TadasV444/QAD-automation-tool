@@ -8,10 +8,10 @@ namespace QadAutomation.Core.Tests.Transfer;
 /// </summary>
 /// <remarks>
 /// Like <c>FakeRasDial</c>, this models the counterparty's behaviour rather than
-/// recording expectations. Uploads really land somewhere, renames really move
-/// them, and <see cref="Files"/> can be inspected afterwards - so a test can
-/// assert that a backup exists and holds the <i>old</i> content, which is the
-/// property that actually matters and which a mock could not express.
+/// recording expectations. Uploads really land in <see cref="Files"/> and
+/// downloads really write to disk, so a test can assert that the backup on the
+/// operator's machine holds the <i>old</i> content - the property that actually
+/// matters, and one a mock asserting "Download was called" could not express.
 /// </remarks>
 internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
 {
@@ -26,6 +26,9 @@ internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
 
     /// <summary>Set to throw on connect, simulating bad credentials.</summary>
     public TransferException? ConnectFailure { get; set; }
+
+    /// <summary>Set to throw when a backup is downloaded.</summary>
+    public TransferException? DownloadFailure { get; set; }
 
     public string HostKeyFingerprint => "ssh-ed25519 SHA256:FAKEFAKEFAKE";
 
@@ -63,14 +66,22 @@ internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
     public bool Exists(string path) =>
         _directories.Contains(path.TrimEnd('/')) || Files.ContainsKey(path);
 
-    public void Rename(string fromPath, string toPath)
+    public void Download(string remotePath, string localPath)
     {
-        if (!Files.Remove(fromPath, out var contents))
+        if (!Files.TryGetValue(remotePath, out var contents))
         {
-            throw new TransferException($"Could not rename '{fromPath}': no such file.");
+            throw new TransferException($"Could not download '{remotePath}': no such file.");
         }
 
-        Files[toPath] = contents;
+        if (DownloadFailure is not null)
+        {
+            throw DownloadFailure;
+        }
+
+        // Writes for real, so a test can assert the backup on disk holds the old
+        // content - and so a missing local directory fails here exactly as it
+        // would against a real server.
+        File.WriteAllText(localPath, contents);
     }
 
     public void Upload(string localPath, string remotePath)

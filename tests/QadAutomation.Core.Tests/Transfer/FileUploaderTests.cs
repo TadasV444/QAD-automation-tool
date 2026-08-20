@@ -12,13 +12,15 @@ public sealed class FileUploaderTests : IDisposable
     private const string QrfPath = "/appl/desktop/test/reports";
 
     private readonly string _local;
+    private readonly string _ticket;
     private readonly FakeSftpServer _server = new FakeSftpServer().WithDirectory(SrcPath, QrfPath);
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 8, 17, 9, 30, 0, TimeSpan.Zero));
 
     public FileUploaderTests()
     {
         _local = Path.Combine(Path.GetTempPath(), "qad-up-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_local);
+        _ticket = Path.Combine(_local, "Ticket 9999555");
+        Directory.CreateDirectory(_ticket);
     }
 
     public void Dispose()
@@ -42,17 +44,30 @@ public sealed class FileUploaderTests : IDisposable
     }
 
     [Fact]
-    public void An_existing_file_is_backed_up_before_being_replaced()
+    public void An_existing_file_is_backed_up_locally_before_being_replaced()
     {
-        // The property that matters: the backup holds the OLD content. A mock
-        // asserting "Rename was called" would pass even if the order were wrong.
+        // The property that matters: the backup on disk holds the OLD content. A
+        // mock asserting "Download was called" would pass even if the order were
+        // wrong and the backup captured the file we had just uploaded.
         _server.WithFile($"{SrcPath}/a.p", "OLD VERSION");
 
         var outcome = Upload(Plan(Local("a.p", "NEW VERSION", ProgramKind.Src)));
 
         Assert.Equal("NEW VERSION", _server.Files[$"{SrcPath}/a.p"]);
-        Assert.Equal("OLD VERSION", _server.Files[$"{SrcPath}/a.p.bak-20260817-093000"]);
+        Assert.Equal("OLD VERSION", File.ReadAllText(BackupPath("TEST-20260817-093000", "SRC", "a.p")));
         Assert.Equal(1, outcome.ReplacedCount);
+    }
+
+    [Fact]
+    public void Nothing_is_left_behind_on_the_server()
+    {
+        // The reason backups moved off the server: every deploy used to leave a
+        // dead .bak file in the client's program directory, permanently.
+        _server.WithFile($"{SrcPath}/a.p", "OLD");
+
+        Upload(Plan(Local("a.p", "NEW", ProgramKind.Src)));
+
+        Assert.Equal($"{SrcPath}/a.p", Assert.Single(_server.Files).Key);
     }
 
     [Fact]
@@ -62,7 +77,11 @@ public sealed class FileUploaderTests : IDisposable
 
         var outcome = Upload(Plan(Local("a.p", "NEW", ProgramKind.Src)));
 
-        Assert.Equal($"{SrcPath}/a.p.bak-20260817-093000", Assert.Single(outcome.WithBackups).BackupPath);
+        Assert.Equal(
+            BackupPath("TEST-20260817-093000", "SRC", "a.p"),
+            Assert.Single(outcome.WithBackups).LocalBackupPath);
+
+        Assert.Equal(Path.Combine(_ticket, "_backup", "TEST-20260817-093000"), outcome.BackupFolder);
     }
 
     [Fact]
@@ -74,9 +93,37 @@ public sealed class FileUploaderTests : IDisposable
         _time.Advance(TimeSpan.FromHours(2));
         Upload(Plan(Local("a.p", "V3", ProgramKind.Src)));
 
-        Assert.Equal("V1", _server.Files[$"{SrcPath}/a.p.bak-20260817-093000"]);
-        Assert.Equal("V2", _server.Files[$"{SrcPath}/a.p.bak-20260817-113000"]);
+        Assert.Equal("V1", File.ReadAllText(BackupPath("TEST-20260817-093000", "SRC", "a.p")));
+        Assert.Equal("V2", File.ReadAllText(BackupPath("TEST-20260817-113000", "SRC", "a.p")));
         Assert.Equal("V3", _server.Files[$"{SrcPath}/a.p"]);
+    }
+
+    [Fact]
+    public void Backups_live_outside_the_kind_folders_so_they_are_never_re_uploaded()
+    {
+        // A backup written into QRF\ would be picked up as a deployable file the
+        // moment the ticket reader learns to recurse.
+        _server.WithFile($"{QrfPath}/b.p", "OLD");
+
+        var outcome = Upload(Plan(Local("b.p", "NEW", ProgramKind.Qrf)));
+
+        var backup = Assert.Single(outcome.WithBackups).LocalBackupPath!;
+
+        Assert.StartsWith(Path.Combine(_ticket, "_backup"), backup, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_src_and_a_qrf_program_of_the_same_name_do_not_collide()
+    {
+        _server.WithFile($"{SrcPath}/same.p", "SRC OLD");
+        _server.WithFile($"{QrfPath}/same.p", "QRF OLD");
+
+        Upload(Plan(
+            Local("same.p", "SRC NEW", ProgramKind.Src),
+            Local("same.p", "QRF NEW", ProgramKind.Qrf)));
+
+        Assert.Equal("SRC OLD", File.ReadAllText(BackupPath("TEST-20260817-093000", "SRC", "same.p")));
+        Assert.Equal("QRF OLD", File.ReadAllText(BackupPath("TEST-20260817-093000", "QRF", "same.p")));
     }
 
     [Fact]
@@ -87,7 +134,21 @@ public sealed class FileUploaderTests : IDisposable
         var outcome = Upload(Plan(Local("a.p", "NEW", ProgramKind.Src)), takeBackups: false);
 
         Assert.Empty(outcome.WithBackups);
-        Assert.DoesNotContain(_server.Files.Keys, k => k.Contains(".bak", StringComparison.Ordinal));
+        Assert.Null(outcome.BackupFolder);
+        Assert.False(Directory.Exists(Path.Combine(_ticket, "_backup")));
+    }
+
+    [Fact]
+    public void A_failed_backup_stops_the_run_before_anything_is_overwritten()
+    {
+        // Downloading a backup can fail in ways a server-side rename could not,
+        // which is why every backup is taken before the first upload.
+        _server.WithFile($"{SrcPath}/a.p", "OLD");
+        _server.DownloadFailure = new TransferException("connection dropped");
+
+        Assert.Throws<TransferException>(() => Upload(Plan(Local("a.p", "NEW", ProgramKind.Src))));
+
+        Assert.Equal("OLD", _server.Files[$"{SrcPath}/a.p"]);
     }
 
     [Fact]
@@ -177,18 +238,31 @@ public sealed class FileUploaderTests : IDisposable
 
     private static readonly SshEndpoint Endpoint = new("qad.example", 22, "mfg", "hunter2", null);
 
+    /// <summary>
+    /// Writes a local program into the ticket's <c>SRC\</c> or <c>QRF\</c> folder,
+    /// mirroring the real layout - which is also what keeps two files of the same
+    /// name in different kinds from colliding before they ever reach the server.
+    /// </summary>
     private ProgramFile Local(string name, string contents, ProgramKind kind)
     {
-        var path = Path.Combine(_local, name);
+        var folder = Path.Combine(_ticket, kind.ToString().ToUpperInvariant());
+        Directory.CreateDirectory(folder);
+
+        var path = Path.Combine(folder, name);
         File.WriteAllText(path, contents);
+
         return new ProgramFile(kind, path);
     }
+
+    /// <summary>Where a backup of <paramref name="name"/> is expected to land.</summary>
+    private string BackupPath(string run, string kind, string name) =>
+        Path.Combine(_ticket, "_backup", run, kind, name);
 
     private UploadOutcome Upload(UploadPlan plan, bool takeBackups = true) =>
         new FileUploader(_server, _time).Upload(plan, Endpoint, takeBackups);
 
-    private static UploadPlan Plan(params ProgramFile[] files) =>
-        UploadPlan.Create(new TicketFolder("Ticket 9999555", @"C:\t", files), Environment(), "pilot");
+    private UploadPlan Plan(params ProgramFile[] files) =>
+        UploadPlan.Create(new TicketFolder("Ticket 9999555", _ticket, files), Environment(), "pilot");
 
     private static QadEnvironment Environment() =>
         new(

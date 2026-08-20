@@ -33,8 +33,17 @@ public sealed class SshNetSftpSession : ISftpSession
     public bool Exists(string path) => Guard(() => _client.Exists(path), $"check '{path}'");
 
     /// <inheritdoc />
-    public void Rename(string fromPath, string toPath) =>
-        Guard(() => _client.RenameFile(fromPath, toPath), $"rename '{fromPath}'");
+    public void Download(string remotePath, string localPath) =>
+        Guard(
+            () =>
+            {
+                // Create, not OpenWrite: a shorter file written over a longer one
+                // would otherwise keep the old tail and produce a backup that is
+                // two versions spliced together.
+                using var stream = File.Create(localPath);
+                _client.DownloadFile(remotePath, stream);
+            },
+            $"download '{remotePath}'");
 
     /// <inheritdoc />
     public void Upload(string localPath, string remotePath) =>
@@ -112,6 +121,13 @@ public sealed class SshNetSftpSession : ISftpSession
         }
         catch (IOException ex)
         {
+            throw new TransferException($"Could not {description}: {ex.Message}", ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            // Download writes to the local disk, so a local permissions problem
+            // can surface here. Without this it would escape as an unhandled
+            // exception and exit 99 instead of naming the failing operation.
             throw new TransferException($"Could not {description}: {ex.Message}", ex);
         }
     }
