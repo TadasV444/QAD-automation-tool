@@ -19,6 +19,12 @@ namespace QadAutomation.Core.Transfer;
 /// callers delete, chmod and recurse; this interface can only do what the upload
 /// step needs, so no future caller can quietly start doing more.
 /// </para>
+/// <para>
+/// Note there is no <c>Rename</c>. There was, when backups were taken by moving
+/// the old file aside on the server; backups are now downloaded instead, and the
+/// method went with the behaviour rather than being left available. Nothing the
+/// tool cannot do is a thing it cannot do by accident.
+/// </para>
 /// </remarks>
 public interface ISftpSession : IDisposable
 {
@@ -28,8 +34,15 @@ public interface ISftpSession : IDisposable
     /// <summary>Whether a file or directory exists at <paramref name="path"/>.</summary>
     bool Exists(string path);
 
-    /// <summary>Renames a remote file. Used to take a backup before overwriting.</summary>
-    void Rename(string fromPath, string toPath);
+    /// <summary>
+    /// Copies a remote file down to <paramref name="localPath"/>, overwriting it.
+    /// </summary>
+    /// <remarks>
+    /// Used to take a backup before overwriting. The caller is responsible for
+    /// the local directory existing - the local layout is its policy, not this
+    /// session's.
+    /// </remarks>
+    void Download(string remotePath, string localPath);
 
     /// <summary>Writes a local file to <paramref name="remotePath"/>, overwriting.</summary>
     void Upload(string localPath, string remotePath);

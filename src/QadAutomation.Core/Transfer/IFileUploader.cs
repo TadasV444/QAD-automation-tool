@@ -13,7 +13,8 @@ public interface IFileUploader
     /// <param name="plan">Already-resolved sources and destinations.</param>
     /// <param name="endpoint">Where to connect.</param>
     /// <param name="takeBackups">
-    /// Rename an existing remote file out of the way before overwriting it.
+    /// Download each file that is about to be overwritten into the ticket
+    /// folder first. Nothing is written to the server either way.
     /// </param>
     /// <param name="onProgress">
     /// Called with a human-readable line per step. A callback rather than a

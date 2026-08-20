@@ -105,7 +105,7 @@ public sealed class UploadCommand
             takeBackups: options.TakeBackups,
             onProgress: line => _output.WriteLine(line));
 
-        WriteOutcome(outcome);
+        WriteOutcome(outcome, client.Id, environment.Name, plan.TicketName);
 
         return ExitCode.Ok;
     }
@@ -144,7 +144,7 @@ public sealed class UploadCommand
         _output.WriteLine();
     }
 
-    private void WriteOutcome(UploadOutcome outcome)
+    private void WriteOutcome(UploadOutcome outcome, string clientId, string environmentName, string ticketName)
     {
         _output.WriteLine();
         _output.WriteLine($"Done - {outcome.CreatedCount} created, {outcome.ReplacedCount} replaced.");
@@ -158,17 +158,38 @@ public sealed class UploadCommand
         // wrong, the operator needs the undo in the next thirty seconds, not
         // after reconstructing filenames from memory.
         _output.WriteLine();
-        _output.WriteLine("Previous versions kept. To undo, over SSH:");
+        _output.WriteLine($"Previous versions saved to {outcome.BackupFolder}");
+        _output.WriteLine();
+        _output.WriteLine("To undo, copy them back over the ticket folder and upload again:");
 
         foreach (var file in outcome.WithBackups)
         {
-            _output.WriteLine($"  mv '{file.BackupPath}' '{file.Planned.RemotePath}'");
+            _output.WriteLine($"  copy /Y \"{file.LocalBackupPath}\" \"{file.Planned.File.LocalPath}\"");
         }
+
+        // The restore is a re-upload rather than a server-side move, so the
+        // second half of the undo is this tool. Spelled out because the first
+        // half looks complete on its own.
+        _output.WriteLine($"  qad upload {clientId} {environmentName} {Quote(ticketName)} --no-backup");
     }
+
+    /// <summary>
+    /// Quotes a ticket name for the printed command line if it needs it.
+    /// </summary>
+    /// <remarks>
+    /// Ticket folders are named like <c>Ticket #9999555</c> - a space and a
+    /// character the shell may treat as a comment. An undo line that cannot be
+    /// pasted is worse than none, because it is trusted.
+    /// </remarks>
+    private static string Quote(string value) =>
+        value.Any(char.IsWhiteSpace) ? $"\"{value}\"" : value;
 }
 
 /// <summary>Switches affecting how an upload runs.</summary>
 /// <param name="DryRun">Print the plan and stop.</param>
 /// <param name="Confirmed">The operator passed <c>--yes</c>.</param>
-/// <param name="TakeBackups">Preserve the existing remote file.</param>
+/// <param name="TakeBackups">
+/// Download each file about to be replaced into the ticket's <c>_backup</c>
+/// folder first. Nothing is written to the server either way.
+/// </param>
 public sealed record UploadOptions(bool DryRun, bool Confirmed, bool TakeBackups);

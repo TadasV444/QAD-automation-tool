@@ -16,11 +16,26 @@ namespace QadAutomation.Core.Transfer;
 /// <list type="number">
 ///   <item>every local file must still exist;</item>
 ///   <item>every destination directory must exist on the server;</item>
+///   <item>every file about to be replaced is downloaded to the ticket folder;</item>
 ///   <item>only then does anything get written.</item>
 /// </list>
 /// <para>
 /// A typo in a remote path therefore costs an error message, not a half-deployed
 /// ticket. The checks are cheap; the recovery they avoid is not.
+/// </para>
+/// <para>
+/// <b>Backups are local, and the server is left alone.</b> An earlier version
+/// renamed the old file to <c>&lt;name&gt;.bak-&lt;stamp&gt;</c> beside itself,
+/// which was one atomic rename and needed no download - but it left a growing
+/// pile of dead files in the client's program directories, one per deploy,
+/// forever. Downloading into <c>&lt;ticket&gt;\_backup\</c> instead keeps the
+/// server exactly as the client's own tooling expects to find it and puts the
+/// old version where the operator is already working.
+/// </para>
+/// <para>
+/// The cost is that a backup now takes a network round trip and can fail, so
+/// every backup is taken <i>before</i> the first upload rather than interleaved
+/// with them. If the fourth download fails, nothing has been overwritten yet.
 /// </para>
 /// </remarks>
 public sealed class FileUploader : IFileUploader
@@ -52,7 +67,7 @@ public sealed class FileUploader : IFileUploader
 
         if (plan.IsEmpty)
         {
-            return new UploadOutcome([], string.Empty);
+            return new UploadOutcome([], string.Empty, null);
         }
 
         VerifyLocalFilesExist(plan);
@@ -67,44 +82,79 @@ public sealed class FileUploader : IFileUploader
 
         VerifyDestinationsExist(plan, session);
 
-        var results = new List<UploadedFile>(plan.Uploads.Count);
         var stamp = _time.GetLocalNow().ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+
+        // One Exists call per file, up front. Asking again after the upload would
+        // answer the wrong question, since by then the file always exists.
+        var replacing = plan.Uploads
+            .Where(upload => session.Exists(upload.RemotePath))
+            .ToList();
+
+        var backups = takeBackups
+            ? DownloadBackups(plan, replacing, session, stamp, report)
+            : [];
+
+        var results = new List<UploadedFile>(plan.Uploads.Count);
 
         foreach (var upload in plan.Uploads)
         {
-            results.Add(Transfer(upload, session, takeBackups, stamp, report));
+            session.Upload(upload.File.LocalPath, upload.RemotePath);
+
+            var replaced = replacing.Contains(upload);
+
+            report($"  {(replaced ? "replaced" : "created ")} [{upload.Kind.ToString().ToUpperInvariant()}] {upload.RemotePath}");
+
+            results.Add(new UploadedFile(
+                upload,
+                replaced ? UploadAction.Replaced : UploadAction.Created,
+                backups.GetValueOrDefault(upload)));
         }
 
-        return new UploadOutcome(results, session.HostKeyFingerprint);
+        return new UploadOutcome(results, session.HostKeyFingerprint, backups.Count == 0 ? null : plan.BackupFolder(stamp));
     }
 
-    private static UploadedFile Transfer(
-        PlannedUpload upload,
+    /// <summary>
+    /// Copies every file that is about to be overwritten into the ticket folder.
+    /// </summary>
+    /// <remarks>
+    /// Runs to completion before the first upload. Backing each file up
+    /// immediately before overwriting it would be simpler, but it would also mean
+    /// a download failing halfway through a batch after three files had already
+    /// been replaced - the half-deployed state the whole class is arranged to
+    /// avoid.
+    /// </remarks>
+    private static Dictionary<PlannedUpload, string> DownloadBackups(
+        UploadPlan plan,
+        IReadOnlyList<PlannedUpload> replacing,
         ISftpSession session,
-        bool takeBackups,
         string stamp,
         Action<string> report)
     {
-        var existed = session.Exists(upload.RemotePath);
-        string? backupPath = null;
+        var backups = new Dictionary<PlannedUpload, string>();
 
-        if (existed && takeBackups)
+        if (replacing.Count == 0)
         {
-            // Timestamped, so a second deploy on the same day does not destroy
-            // the first deploy's backup - which is precisely when you need it.
-            backupPath = $"{upload.RemotePath}.bak-{stamp}";
-            session.Rename(upload.RemotePath, backupPath);
-            report($"  backed up {upload.File.FileName} -> {Name(backupPath)}");
+            return backups;
         }
 
-        session.Upload(upload.File.LocalPath, upload.RemotePath);
+        report($"Backing up {replacing.Count} existing file(s) to {plan.BackupFolder(stamp)}");
 
-        report($"  {(existed ? "replaced" : "created ")} [{upload.Kind.ToString().ToUpperInvariant()}] {upload.RemotePath}");
+        foreach (var upload in replacing)
+        {
+            var localPath = plan.BackupPathFor(upload, stamp);
 
-        return new UploadedFile(
-            upload,
-            existed ? UploadAction.Replaced : UploadAction.Created,
-            backupPath);
+            // Created here rather than in the session: where backups live is this
+            // class's policy, and the session should not have opinions about the
+            // local disk beyond writing the file it was handed.
+            Directory.CreateDirectory(Path.GetDirectoryName(localPath)!);
+
+            session.Download(upload.RemotePath, localPath);
+            backups[upload] = localPath;
+
+            report($"  saved {upload.Kind.ToString().ToUpperInvariant()}\\{upload.File.FileName}");
+        }
+
+        return backups;
     }
 
     /// <summary>
@@ -152,6 +202,4 @@ public sealed class FileUploader : IFileUploader
                 $"'{plan.Environment.Name}'. Nothing was uploaded.");
         }
     }
-
-    private static string Name(string remotePath) => remotePath[(remotePath.LastIndexOf('/') + 1)..];
 }
