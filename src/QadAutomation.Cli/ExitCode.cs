@@ -28,5 +28,13 @@ public static class ExitCode
     /// </summary>
     public const int TransferError = 5;
 
+    /// <summary>
+    /// At least one program did not compile. Distinct from
+    /// <see cref="TransferError"/> because the files arrived intact and the
+    /// connection was fine - the source is wrong, and the fix is in the program,
+    /// not in the tool or the config.
+    /// </summary>
+    public const int CompileError = 6;
+
     public const int Unexpected = 99;
 }

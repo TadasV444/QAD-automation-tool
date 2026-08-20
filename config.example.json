@@ -55,16 +55,34 @@
         "srcRemotePath": "/qad/live/src",
         "qrfRemotePath": "/qad/live/qrf",
 
+        // Both halves are optional. Leave one out and the tool will say that
+        // kind cannot be compiled for this environment, rather than guessing.
         "compile": {
-          // DirectCommand | InteractiveMenu
-          "strategy": "DirectCommand",
-          // Placeholders substituted per file at run time:
-          //   {remotePath}  the destination directory
-          //   {fileName}    the file's own name
-          //   {remoteFile}  the two joined
-          "commands": [
-            "cd {remotePath} && compile {fileName}"
-          ]
+
+          // QRF reports: one Progress editor session per file. The tool opens
+          // the editor, presses F4, types the statement, presses F1, and then
+          // checks the .r timestamp to see whether it actually built.
+          "qrf": {
+            // The whole command, because its trailing argument names the
+            // environment and the binary's own path may too.
+            "editorCommand": "/qad/live/qrf/compile_editor us live",
+
+            // Optional. Defaults to exactly this. Placeholders:
+            //   {remoteFile}       the uploaded .p, full remote path
+            //   {remoteDirectory}  where the .r should land
+            "statement": "compile {remoteFile} save into {remoteDirectory}."
+          },
+
+          // SRC programs: write the manifest, then run the compile script once
+          // per user language. NOT yet verified against a real server.
+          "src": {
+            "manifestPath": "/qad/global/utcompil.wrk",
+            "workingDirectory": "/qad/global",
+            "commands": [
+              "./compile lt live",
+              "./compile us live"
+            ]
+          }
         }
       },
 
@@ -97,12 +115,8 @@
         "password": "${SECOND_SSH_PASSWORD}",
         "srcRemotePath": "/qad/src",
         "qrfRemotePath": "/qad/qrf",
-        "compile": {
-          // Menu-driven interactive CLIs. The keystroke script is still
-          // being mapped out, so 'commands' may be empty for now.
-          "strategy": "InteractiveMenu",
-          "commands": []
-        }
+        // Omitted entirely: this client's compile procedure has not been
+        // mapped out yet. Uploading still works; `qad compile` will say so.
       },
 
       "environments": [

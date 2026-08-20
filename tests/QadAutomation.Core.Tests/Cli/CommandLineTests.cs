@@ -132,7 +132,7 @@ public sealed class CommandLineApplicationTests
                     "defaults": {
                       "host": "qad.example", "username": "qad", "password": "ssh-hunter2",
                       "srcRemotePath": "/qad/src",
-                      "compile": { "strategy": "DirectCommand", "commands": ["compile"] }
+                      "compile": { "qrf": { "editorCommand": "compile_editor us test" } }
                     },
                     "environments": [{ "name": "DEVL" }, { "name": "PROD" }]
                   }]

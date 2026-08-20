@@ -193,24 +193,81 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
-    public void Direct_command_compile_requires_at_least_one_command()
+    public void A_missing_compile_block_is_not_an_error()
     {
-        var file = FileWith(client => client.Defaults!.Compile =
-            new CompileSection { Strategy = "DirectCommand", Commands = [] });
+        // Uploading works without compiling, and SRC has no verified recipe yet.
+        // Refusing to load the file would only encourage an invented one.
+        var file = FileWith(client => client.Defaults!.Compile = null);
 
-        Assert.Contains("at least one entry in 'commands'", ResolveError(file));
+        Assert.True(Resolve(file).Clients[0].Environments[0].Compile.IsEmpty);
     }
 
     [Fact]
-    public void Interactive_menu_compile_may_have_no_commands_yet()
+    public void A_qrf_recipe_needs_an_editor_command()
     {
         var file = FileWith(client => client.Defaults!.Compile =
-            new CompileSection { Strategy = "InteractiveMenu" });
+            new CompileSection { Qrf = new QrfCompileSection { Statement = "compile {remoteFile}." } });
 
-        var compile = Resolve(file).Clients[0].Environments[0].Compile;
+        Assert.Contains("'editorCommand'", ResolveError(file));
+    }
 
-        Assert.Equal(CompileStrategy.InteractiveMenu, compile.Strategy);
-        Assert.Empty(compile.Commands);
+    [Fact]
+    public void A_qrf_statement_defaults_to_the_standard_progress_compile()
+    {
+        // Every site seen so far types the same statement, so making it optional
+        // removes a line of config that could only ever be got wrong.
+        var qrf = Resolve(FileWith()).Clients[0].Environments[0].Compile.Qrf;
+
+        Assert.Equal(
+            "compile /qad/qrf/rep.p save into /qad/qrf.",
+            qrf!.StatementFor("/qad/qrf/rep.p", "/qad/qrf"));
+    }
+
+    [Fact]
+    public void A_qrf_statement_that_names_no_file_is_refused()
+    {
+        // Without the placeholder every report in the ticket would compile the
+        // same file, and the .r check would pass for each of them.
+        var file = FileWith(client => client.Defaults!.Compile = new CompileSection
+        {
+            Qrf = new QrfCompileSection
+            {
+                EditorCommand = "compile_editor us devl",
+                Statement = "compile /qad/qrf/fixed.p save into /qad/qrf."
+            }
+        });
+
+        Assert.Contains("{remoteFile}", ResolveError(file));
+    }
+
+    [Fact]
+    public void A_qrf_statement_without_its_full_stop_is_refused()
+    {
+        // The worst kind of failure: the editor holds an unterminated line, F1
+        // compiles nothing, and it looks exactly like a compile that ran.
+        var file = FileWith(client => client.Defaults!.Compile = new CompileSection
+        {
+            Qrf = new QrfCompileSection
+            {
+                EditorCommand = "compile_editor us devl",
+                Statement = "compile {remoteFile} save into {remoteDirectory}"
+            }
+        });
+
+        Assert.Contains("must end with '.'", ResolveError(file));
+    }
+
+    [Fact]
+    public void A_src_recipe_needs_a_manifest_a_directory_and_commands()
+    {
+        var file = FileWith(client => client.Defaults!.Compile =
+            new CompileSection { Src = new SrcCompileSection() });
+
+        var message = ResolveError(file);
+
+        Assert.Contains("'manifestPath'", message);
+        Assert.Contains("'workingDirectory'", message);
+        Assert.Contains("'commands'", message);
     }
 
     [Fact]
@@ -221,16 +278,24 @@ public sealed class ConfigurationResolverTests
             new EnvironmentSection
             {
                 Name = "PROD",
-                Compile = new CompileSection { Strategy = "InteractiveMenu" }
+                Compile = new CompileSection
+                {
+                    Src = new SrcCompileSection
+                    {
+                        ManifestPath = "/qad/global/utcompil.wrk",
+                        WorkingDirectory = "/qad/global",
+                        Commands = ["./compile us prod"]
+                    }
+                }
             }
         ]);
 
         var compile = Resolve(file).Clients[0].Environments[0].Compile;
 
-        Assert.Equal(CompileStrategy.InteractiveMenu, compile.Strategy);
+        Assert.NotNull(compile.Src);
 
-        // The default's commands must NOT leak into the overriding block.
-        Assert.Empty(compile.Commands);
+        // The default's QRF recipe must NOT leak into the overriding block.
+        Assert.Null(compile.Qrf);
     }
 
     [Fact]
@@ -307,8 +372,7 @@ public sealed class ConfigurationResolverTests
                 QrfRemotePath = "/qad/qrf",
                 Compile = new CompileSection
                 {
-                    Strategy = "DirectCommand",
-                    Commands = ["compile {remoteFile}"]
+                    Qrf = new QrfCompileSection { EditorCommand = "/qad/qrf/compile_editor us devl" }
                 }
             },
             Environments = [new EnvironmentSection { Name = "DEVL" }]

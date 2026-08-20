@@ -68,6 +68,14 @@ public sealed class SshNetSftpSession : ISftpSession
                 .ToList(),
             $"list '{remoteDirectory}'");
 
+    /// <inheritdoc />
+    public DateTimeOffset? LastWriteTime(string remotePath) =>
+        Guard<DateTimeOffset?>(
+            () => _client.Exists(remotePath)
+                ? new DateTimeOffset(_client.Get(remotePath).LastWriteTimeUtc, TimeSpan.Zero)
+                : null,
+            $"read the timestamp of '{remotePath}'");
+
     public void Dispose()
     {
         // Never throws: disposal runs on the failure path too, and an error here

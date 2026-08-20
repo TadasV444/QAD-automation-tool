@@ -16,6 +16,19 @@ namespace QadAutomation.Core.Tests.Transfer;
 internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
 {
     private readonly HashSet<string> _directories = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTimeOffset> _times = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Advances one second per write, so every write is strictly later than the
+    /// one before it.
+    /// </summary>
+    /// <remarks>
+    /// A monotonic counter rather than a <c>FakeTimeProvider</c> because the only
+    /// question ever asked of these timestamps is "is this one newer?". Making
+    /// that unambiguous by construction means a compile test cannot pass or fail
+    /// on how the fake rounds a clock.
+    /// </remarks>
+    private DateTimeOffset _clock = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>Remote path to contents.</summary>
     public Dictionary<string, string> Files { get; } = new(StringComparer.Ordinal);
@@ -45,8 +58,15 @@ internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
     public FakeSftpServer WithFile(string path, string contents)
     {
         Files[path] = contents;
+        _times[path] = _clock = _clock.AddSeconds(1);
         return this;
     }
+
+    /// <summary>
+    /// Gives <paramref name="path"/> a newer timestamp, creating it if needed -
+    /// what a successful compile does to a <c>.r</c> file.
+    /// </summary>
+    public FakeSftpServer Touch(string path) => WithFile(path, Files.GetValueOrDefault(path, "COMPILED"));
 
     // --- ISftpSessionFactory ---------------------------------------------
 
@@ -88,8 +108,11 @@ internal sealed class FakeSftpServer : ISftpSessionFactory, ISftpSession
     {
         // Reads the real local file, so a test that forgets to create one fails
         // the same way the real uploader would.
-        Files[remotePath] = File.ReadAllText(localPath);
+        WithFile(remotePath, File.ReadAllText(localPath));
     }
+
+    public DateTimeOffset? LastWriteTime(string remotePath) =>
+        _times.TryGetValue(remotePath, out var time) ? time : null;
 
     public IReadOnlyList<string> List(string remoteDirectory)
     {

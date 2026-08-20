@@ -270,5 +270,5 @@ public sealed class FileUploaderTests : IDisposable
             false,
             Endpoint,
             new RemotePaths(SrcPath, QrfPath),
-            new CompileSettings(CompileStrategy.InteractiveMenu, []));
+            new CompileSettings(null, null));
 }

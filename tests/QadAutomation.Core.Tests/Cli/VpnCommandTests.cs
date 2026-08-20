@@ -38,7 +38,7 @@ public sealed class VpnCommandTests : IDisposable
                 "defaults": {
                   "host": "qad.example", "username": "qad", "password": "pw",
                   "srcRemotePath": "/qad/src",
-                  "compile": { "strategy": "InteractiveMenu", "commands": [] }
+                  "compile": { "qrf": { "editorCommand": "compile_editor us test" } }
                 },
                 "environments": [{ "name": "TEST" }]
               }]
