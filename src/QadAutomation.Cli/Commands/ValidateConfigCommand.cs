@@ -73,13 +73,27 @@ public sealed class ValidateConfigCommand
             _output.WriteLine($"    ssh     : {ssh.Username}@{ssh.Host}:{ssh.Port}  ({auth})");
             _output.WriteLine($"    SRC path: {environment.Paths.Src ?? "(none)"}");
             _output.WriteLine($"    QRF path: {environment.Paths.Qrf ?? "(none)"}");
-            _output.WriteLine(
-                $"    compile : {environment.Compile.Strategy}, " +
-                $"{environment.Compile.Commands.Count} command(s)");
+            _output.WriteLine($"    compile : {DescribeCompile(environment.Compile)}");
         }
 
         _output.WriteLine();
     }
+
+    /// <summary>
+    /// Names which kinds this environment can compile.
+    /// </summary>
+    /// <remarks>
+    /// Says "QRF only" rather than listing the editor command. What the operator
+    /// needs from this screen is whether a kind will work at all; the command
+    /// itself is in the file they are already looking at.
+    /// </remarks>
+    private static string DescribeCompile(CompileSettings compile) => compile switch
+    {
+        { Qrf: not null, Src: not null } => "SRC and QRF",
+        { Qrf: not null } => "QRF only (no 'compile.src' block)",
+        { Src: not null } => "SRC only (no 'compile.qrf' block)",
+        _ => "not configured"
+    };
 
     private static string DescribeVpn(VpnSettings vpn) => vpn.Type switch
     {

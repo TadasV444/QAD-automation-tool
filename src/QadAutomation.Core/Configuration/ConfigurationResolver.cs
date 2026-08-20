@@ -231,44 +231,120 @@ public sealed class ConfigurationResolver
             compile);
     }
 
+    /// <summary>
+    /// Builds the compile recipes, or returns <c>null</c> if one is present but
+    /// malformed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Note: 'compile' is replaced wholesale by an environment, never merged
+    /// field-by-field. A half-inherited recipe - this environment's editor
+    /// command with another's manifest path - is far more likely to be a
+    /// surprise than a convenience.
+    /// </para>
+    /// <para>
+    /// A missing block is not an error. Uploading works without compiling, and
+    /// SRC compilation has not been verified anywhere yet; refusing to load a
+    /// config until every recipe is filled in would push someone to invent one.
+    /// The failure surfaces at the point of use instead, where it can say which
+    /// kind is missing for which environment.
+    /// </para>
+    /// </remarks>
     private static CompileSettings? ResolveCompile(
         CompileSection? compile,
         string label,
         List<string> errors)
     {
-        // Note: 'compile' is replaced wholesale by an environment, never merged
-        // field-by-field. A half-inherited compile recipe - this environment's
-        // strategy with another's commands - is far more likely to be a surprise
-        // than a convenience.
-        if (compile is null || string.IsNullOrWhiteSpace(compile.Strategy))
+        if (compile is null)
         {
-            errors.Add($"{label}: a 'compile' block with a 'strategy' is required.");
+            return new CompileSettings(null, null);
+        }
+
+        var before = errors.Count;
+
+        var qrf = ResolveQrfCompile(compile.Qrf, label, errors);
+        var src = ResolveSrcCompile(compile.Src, label, errors);
+
+        return errors.Count == before ? new CompileSettings(qrf, src) : null;
+    }
+
+    private static QrfCompileSettings? ResolveQrfCompile(
+        QrfCompileSection? qrf,
+        string label,
+        List<string> errors)
+    {
+        if (qrf is null)
+        {
             return null;
         }
 
-        if (!Enum.TryParse<CompileStrategy>(compile.Strategy.Trim(), ignoreCase: true, out var strategy))
+        var editorCommand = Trimmed(qrf.EditorCommand);
+
+        if (editorCommand is null)
+        {
+            errors.Add($"{label}: 'compile.qrf' needs an 'editorCommand'.");
+            return null;
+        }
+
+        var statement = Trimmed(qrf.Statement) ?? QrfCompileSettings.DefaultStatementTemplate;
+
+        if (!statement.Contains("{remoteFile}", StringComparison.Ordinal))
         {
             errors.Add(
-                $"{label}: unknown compile strategy '{compile.Strategy}'. " +
-                $"Expected one of: {string.Join(", ", Enum.GetNames<CompileStrategy>())}.");
+                $"{label}: 'compile.qrf.statement' must contain '{{remoteFile}}', " +
+                "otherwise every report would compile the same file.");
             return null;
         }
 
-        var commands = compile.Commands?
+        // A Progress statement without its full stop is not a syntax error the
+        // operator would ever see: the editor simply holds an unterminated line
+        // and F1 compiles nothing, which looks exactly like a compile that ran
+        // and changed nothing.
+        if (!statement.EndsWith('.'))
+        {
+            errors.Add($"{label}: 'compile.qrf.statement' must end with '.' - it is a Progress statement.");
+            return null;
+        }
+
+        return new QrfCompileSettings(editorCommand, statement);
+    }
+
+    private static SrcCompileSettings? ResolveSrcCompile(
+        SrcCompileSection? src,
+        string label,
+        List<string> errors)
+    {
+        if (src is null)
+        {
+            return null;
+        }
+
+        var manifestPath = Trimmed(src.ManifestPath);
+        var workingDirectory = Trimmed(src.WorkingDirectory);
+
+        var commands = src.Commands?
             .Where(c => !string.IsNullOrWhiteSpace(c))
             .Select(c => c.Trim())
             .ToList() ?? [];
 
-        // An InteractiveMenu recipe is allowed to be empty for now - those flows
-        // are still being mapped out - but a DirectCommand with nothing to run is
-        // simply an incomplete config.
-        if (strategy == CompileStrategy.DirectCommand && commands.Count == 0)
+        if (manifestPath is null)
         {
-            errors.Add($"{label}: compile strategy 'DirectCommand' requires at least one entry in 'commands'.");
-            return null;
+            errors.Add($"{label}: 'compile.src' needs a 'manifestPath'.");
         }
 
-        return new CompileSettings(strategy, commands);
+        if (workingDirectory is null)
+        {
+            errors.Add($"{label}: 'compile.src' needs a 'workingDirectory' for the compile script.");
+        }
+
+        if (commands.Count == 0)
+        {
+            errors.Add($"{label}: 'compile.src' needs at least one entry in 'commands'.");
+        }
+
+        return manifestPath is null || workingDirectory is null || commands.Count == 0
+            ? null
+            : new SrcCompileSettings(manifestPath, workingDirectory, commands);
     }
 
     private static string? Trimmed(string? value) =>

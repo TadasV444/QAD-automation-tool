@@ -123,5 +123,5 @@ public sealed class UploadPlanTests
             isProduction,
             new SshEndpoint("qad.example", 22, "mfg", "pw", null),
             new RemotePaths(src, qrf),
-            new CompileSettings(CompileStrategy.InteractiveMenu, []));
+            new CompileSettings(null, null));
 }

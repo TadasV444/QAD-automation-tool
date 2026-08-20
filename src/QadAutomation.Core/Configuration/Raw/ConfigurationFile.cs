@@ -74,11 +74,26 @@ public sealed class VpnSection
     public string? Password { get; set; }
 }
 
-/// <summary>Compile recipe for a client default or a single environment.</summary>
+/// <summary>Compile recipes for a client default or a single environment.</summary>
 public sealed class CompileSection
 {
-    /// <summary>Parsed into <see cref="CompileStrategy"/>; case-insensitive.</summary>
-    public string? Strategy { get; set; }
+    public QrfCompileSection? Qrf { get; set; }
+    public SrcCompileSection? Src { get; set; }
+}
 
+/// <summary>The <c>compile.qrf</c> block.</summary>
+public sealed class QrfCompileSection
+{
+    public string? EditorCommand { get; set; }
+
+    /// <summary>Optional; defaults to the standard Progress compile statement.</summary>
+    public string? Statement { get; set; }
+}
+
+/// <summary>The <c>compile.src</c> block.</summary>
+public sealed class SrcCompileSection
+{
+    public string? ManifestPath { get; set; }
+    public string? WorkingDirectory { get; set; }
     public List<string>? Commands { get; set; }
 }

@@ -3,7 +3,7 @@ using QadAutomation.Core.Configuration;
 namespace QadAutomation.Core.Transfer;
 
 /// <summary>
-/// A connected SFTP session, reduced to the four operations this tool performs.
+/// A connected SFTP session, reduced to the operations this tool performs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -49,6 +49,28 @@ public interface ISftpSession : IDisposable
 
     /// <summary>Names of the entries in a remote directory.</summary>
     IReadOnlyList<string> List(string remoteDirectory);
+
+    /// <summary>
+    /// When <paramref name="remotePath"/> was last written, or <c>null</c> if it
+    /// does not exist.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is how a compile is verified. Progress leaves the old <c>.r</c>
+    /// untouched when a compile fails, so comparing the timestamp either side of
+    /// the attempt answers "did it actually build?" - the same check the operator
+    /// does by eye today, and a far steadier signal than scraping an editor
+    /// screen for error text.
+    /// </para>
+    /// <para>
+    /// Both readings come from the server, so the client's clock is irrelevant
+    /// and only the difference is ever used. Note SFTP reports whole seconds:
+    /// two compiles of the same file inside one second would be
+    /// indistinguishable. That is acceptable for an operator-driven tool and
+    /// noted here so it is not rediscovered as a bug.
+    /// </para>
+    /// </remarks>
+    DateTimeOffset? LastWriteTime(string remotePath);
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using QadAutomation.Cli.Commands;
+using QadAutomation.Core.Compile;
 using QadAutomation.Core.Configuration;
 using QadAutomation.Core.Processes;
 using QadAutomation.Core.Tickets;
@@ -31,6 +32,7 @@ public sealed class CommandLineApplication
     private readonly TextWriter _error;
     private readonly IVpnConnectorFactory _connectors;
     private readonly ISftpSessionFactory _sftp;
+    private readonly ISshShellFactory _shells;
 
     /// <param name="output">Where normal output goes.</param>
     /// <param name="error">Where diagnostics go.</param>
@@ -41,16 +43,23 @@ public sealed class CommandLineApplication
     /// <param name="sftp">
     /// Overridable for the same reason, against a server instead of a VPN.
     /// </param>
+    /// <param name="shells">
+    /// Overridable so the compile step can be driven without a Progress editor
+    /// on the other end. Separate from <paramref name="sftp"/> because they are
+    /// genuinely two connections: one to type into, one to read timestamps from.
+    /// </param>
     public CommandLineApplication(
         TextWriter output,
         TextWriter error,
         IVpnConnectorFactory? connectors = null,
-        ISftpSessionFactory? sftp = null)
+        ISftpSessionFactory? sftp = null,
+        ISshShellFactory? shells = null)
     {
         _output = output;
         _error = error;
         _connectors = connectors ?? new VpnConnectorFactory(new ProcessRunner());
         _sftp = sftp ?? new SshNetSftpSessionFactory();
+        _shells = shells ?? new SshNetShellFactory();
     }
 
     public int Run(string[] args)
@@ -153,6 +162,24 @@ public sealed class CommandLineApplication
                                 TakeBackups: !args.HasFlag(CommandLineParser.NoBackupFlag)))
                     : ExitCode.UsageError;
 
+            case "compile":
+                return Expect(args, 3, "qad compile <client> <environment> <ticket> [--dry-run] [--yes]")
+                    ? new CompileCommand(
+                            CreateLoader(args),
+                            CreateTicketReader(args),
+                            _connectors,
+                            new ProgressEditorCompiler(_shells, _sftp),
+                            _output,
+                            _error)
+                        .Execute(
+                            args.Target!,
+                            args.Argument(1)!,
+                            args.Argument(2)!,
+                            new CompileOptions(
+                                DryRun: args.HasFlag(CommandLineParser.DryRunFlag),
+                                Confirmed: args.HasFlag(CommandLineParser.YesFlag)))
+                    : ExitCode.UsageError;
+
             default:
                 _error.WriteLine($"Unknown command '{args.Command}'.");
                 WriteUsage(_error);
@@ -242,6 +269,8 @@ public sealed class CommandLineApplication
                                             Connect and verify the remote paths, read-only
               qad upload <client> <environment> <ticket>
                                             Upload a ticket's SRC/QRF files
+              qad compile <client> <environment> <ticket>
+                                            Compile a ticket's QRF reports
               qad help                      Show this help
 
             Options:
@@ -251,9 +280,10 @@ public sealed class CommandLineApplication
               --no-backup                   Overwrite without keeping the previous version
 
             Examples:
-              qad check  pilot TEST                    prove the connection works
-              qad upload pilot TEST 9999555 --dry-run  see what would be sent
-              qad upload pilot TEST 9999555            send it
+              qad check   pilot TEST                    prove the connection works
+              qad upload  pilot TEST 9999555 --dry-run  see what would be sent
+              qad upload  pilot TEST 9999555            send it
+              qad compile pilot TEST 9999555            build it on the server
 
             Configuration is read from, in order:
               1. --config <path>
@@ -262,8 +292,8 @@ public sealed class CommandLineApplication
               4. config.json next to the executable
               5. %APPDATA%\QadAutomationTool\config.json
 
-            'vpn', 'check' and 'upload' touch the network; 'check' only reads.
-            Everything else is local, and 'upload --dry-run' connects to nothing.
+            'vpn', 'check', 'upload' and 'compile' touch the network; 'check' only
+            reads. Everything else is local, and '--dry-run' connects to nothing.
             """);
     }
 }
