@@ -32,11 +32,12 @@ namespace QadAutomation.Core.Compile;
 internal sealed class ShellCommandCompiler
 {
     /// <summary>
-    /// How long output must stop before the command is considered finished.
+    /// How long the login banner must be quiet before the shell is ready.
     /// </summary>
     /// <remarks>
-    /// The marker echo is what actually ends the wait; this only bounds the gap
-    /// between lines of a build that is still talking.
+    /// Used only before any command runs, where a pause genuinely does mean
+    /// nothing more is coming. The command itself is waited on by its marker,
+    /// not by silence.
     /// </remarks>
     private static readonly TimeSpan SettleFor = TimeSpan.FromSeconds(2);
 
@@ -99,6 +100,8 @@ internal sealed class ShellCommandCompiler
     {
         using var shell = _shells.Open(endpoint);
 
+        // The login banner. Idle is the right test here - there is no command
+        // running, so a pause really does mean the shell is ready.
         shell.ReadUntilIdle(SettleFor, CommandTimeout);
 
         shell.Send($"cd {recipe.WorkingDirectory}" + ProgressKeys.Enter);
@@ -106,48 +109,27 @@ internal sealed class ShellCommandCompiler
 
         report($"  {recipe.Command}");
 
-        shell.Send(recipe.Command + ProgressKeys.Enter);
+        // Command and status echo as one line. The echo is both the answer and
+        // the signal that the command has finished - waiting for a pause
+        // instead would give up in the middle of a slow build.
+        shell.Send(ShellProtocol.WithExitCode(recipe.Command) + ProgressKeys.Enter);
 
-        var screen = shell.ReadUntilIdle(SettleFor, CommandTimeout);
+        var screen = shell.ReadUntil(ShellProtocol.CompletedExitCode, CommandTimeout);
 
-        // Echoed as its own command so the value is the previous command's,
-        // captured before anything else can overwrite $?.
-        shell.Send(ShellProtocol.EchoExitCode + ProgressKeys.Enter);
-
-        var tail = shell.ReadUntilIdle(SettleFor, CommandTimeout);
-
-        return (screen, ExitCodeIn(tail));
+        return (screen, ExitCodeIn(screen));
     }
 
     /// <summary>
-    /// Finds the echoed exit code, or <c>null</c> if the marker never appeared.
+    /// Finds the echoed exit code, or <c>null</c> if it never arrived.
     /// </summary>
     /// <remarks>
-    /// The command line itself echoes back before its output, so the marker
-    /// occurs twice - once in the echoed command, where it is followed by
-    /// <c>$?</c>, and once in the result. Taking the last occurrence that parses
-    /// as a number is what tells them apart.
+    /// Null means the command was still running when time ran out. Reported as
+    /// a failure, because an unanswered question is not a yes.
     /// </remarks>
-    private static int? ExitCodeIn(string output)
-    {
-        int? found = null;
-
-        var index = output.IndexOf(ShellProtocol.ExitMarker, StringComparison.Ordinal);
-
-        while (index >= 0)
-        {
-            var digits = new string([.. output[(index + ShellProtocol.ExitMarker.Length)..].TakeWhile(char.IsDigit)]);
-
-            if (digits.Length > 0)
-            {
-                found = int.Parse(digits, CultureInfo.InvariantCulture);
-            }
-
-            index = output.IndexOf(ShellProtocol.ExitMarker, index + ShellProtocol.ExitMarker.Length, StringComparison.Ordinal);
-        }
-
-        return found;
-    }
+    private static int? ExitCodeIn(string output) =>
+        ShellProtocol.CompletedExitCode.Match(output) is { Success: true } match
+            ? int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)
+            : null;
 
     private static void VerifySourcesExist(IReadOnlyList<PlannedShellCompile> planned, ISftpSession session)
     {

@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using QadAutomation.Core.Configuration;
 using QadAutomation.Core.Transfer;
 using Renci.SshNet;
@@ -46,6 +47,46 @@ public sealed class SshNetShell : ISshShell
         {
             throw new TransferException($"The remote shell closed while sending input: {ex.Message}", ex);
         }
+    }
+
+    /// <inheritdoc />
+    public string ReadUntil(Regex marker, TimeSpan timeout)
+    {
+        ArgumentNullException.ThrowIfNull(marker);
+
+        var received = new StringBuilder();
+        var start = DateTime.UtcNow;
+
+        while (DateTime.UtcNow - start < timeout)
+        {
+            string chunk;
+
+            try
+            {
+                chunk = _stream.Read();
+            }
+            catch (Exception ex) when (ex is SshException or IOException)
+            {
+                break;
+            }
+
+            if (chunk.Length == 0)
+            {
+                Thread.Sleep(PollInterval);
+                continue;
+            }
+
+            received.Append(chunk);
+
+            if (marker.IsMatch(received.ToString()))
+            {
+                break;
+            }
+        }
+
+        // Returned whether or not the marker arrived. A timeout with output is
+        // far more useful to an operator than a bare "timed out".
+        return received.ToString();
     }
 
     /// <inheritdoc />
