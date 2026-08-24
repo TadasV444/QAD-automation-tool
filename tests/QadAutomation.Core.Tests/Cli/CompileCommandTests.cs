@@ -159,6 +159,21 @@ public sealed class CompileCommandTests : IDisposable
     }
 
     [Fact]
+    public void A_shell_prompt_setting_the_window_title_does_not_leak_into_the_log()
+    {
+        // Seen on a real failure: the prompt's OSC sequence lost only its ESC,
+        // and the title text arrived as a stray "0;mfg@host:/path" line.
+        Uploaded("rep_b.p");
+        _server.WithFile($"{QrfPath}/rep_b.r", "STALE");
+        _shell.Screen = Screen("BUILD FAILED\n<ESC>]0;mfg@test:/qad/apps<BEL>[mfg@test apps]$ ");
+
+        var (_, _, error) = Run("compile", "pilot", "TEST", "9999555");
+
+        Assert.Contains("BUILD FAILED", error);
+        Assert.DoesNotContain("0;mfg@test", error);
+    }
+
+    [Fact]
     public void Plain_output_keeps_its_own_line_breaks()
     {
         // The SRC compile script is an ordinary program, not a cursor-addressed
@@ -255,7 +270,9 @@ public sealed class CompileCommandTests : IDisposable
     /// escape byte - a raw one in source is invisible in every editor and diff.
     /// </summary>
     private static string Screen(string withMarkers) =>
-        withMarkers.Replace("<ESC>", ((char)27).ToString(), StringComparison.Ordinal);
+        withMarkers
+            .Replace("<ESC>", ((char)27).ToString(), StringComparison.Ordinal)
+            .Replace("<BEL>", ((char)7).ToString(), StringComparison.Ordinal);
 
     private void Uploaded(params string[] names)
     {

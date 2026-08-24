@@ -206,9 +206,18 @@ public sealed class CompileCommand
     /// output is plain lines - without this, a whole banner of shell output
     /// collapses into one unreadable run-on.
     /// </para>
+    /// <para>
+    /// The first alternative is an OSC sequence - the one a shell prompt uses to
+    /// set the window title - and it has to be matched whole. Left to the
+    /// catch-all it loses only its <c>ESC</c>, and the title text itself
+    /// survives into the output as a stray <c>0;user@host:/path</c>.
+    /// </para>
     /// </remarks>
-    private static readonly Regex EscapeSequence =
-        new(@"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)|[\r\n]+", RegexOptions.Compiled);
+    private static readonly Regex EscapeSequence = new(
+        @"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)" +
+        @"|\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)" +
+        @"|[\r\n]+",
+        RegexOptions.Compiled);
 
     /// <summary>
     /// Removes the box the editor draws around an error, leaving its contents.
