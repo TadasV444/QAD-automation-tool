@@ -47,7 +47,7 @@ public sealed class UploadCommandTests : IDisposable
                   "host": "qad.example", "username": "mfg", "password": "hunter2",
                   "srcRemotePath": "{{SrcPath}}",
                   "qrfRemotePath": "{{QrfPath}}",
-                  "compile": { "qrf": { "editorCommand": "compile_editor us test" } }
+                  "compile": { "qrf": { "editor": { "editorCommand": "compile_editor us test" } } }
                 },
                 "environments": [
                   { "name": "TEST" },

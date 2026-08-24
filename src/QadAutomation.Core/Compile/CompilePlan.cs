@@ -7,18 +7,19 @@ namespace QadAutomation.Core.Compile;
 /// One program to compile, and how to tell whether it worked.
 /// </summary>
 /// <remarks>
-/// The two kinds are separate types rather than one record with nullable fields
-/// because they genuinely differ: a QRF report is compiled by typing a statement
-/// and produces one result, while a SRC program is compiled by a batch script
-/// and produces one result per language. A single shape would need
-/// <c>Statement</c> to be null half the time, and the compiler would have to
-/// re-check what it already knows.
+/// One record per procedure rather than one shape with nullable fields. The
+/// procedures need genuinely different things - a statement to type, a set of
+/// per-language outputs, or neither - and a single record would leave every
+/// consumer re-deciding which kind it was holding. What they do share is
+/// <see cref="RemoteResults"/>: the artefacts whose timestamps decide the
+/// verdict.
 /// </remarks>
 /// <param name="File">The local file, for its name and kind.</param>
 /// <param name="RemoteFile">The uploaded source on the server.</param>
 /// <param name="RemoteResults">
-/// Every compiled file this should produce, read before and after to decide the
-/// verdict. All of them must move for the compile to count.
+/// Every compiled file this should produce, read before and after. All of them
+/// must move for the compile to count. May be empty, for a procedure whose
+/// output location is unknown and which is judged by its exit code instead.
 /// </param>
 public abstract record PlannedCompile(
     ProgramFile File,
@@ -28,7 +29,7 @@ public abstract record PlannedCompile(
     public ProgramKind Kind => File.Kind;
 }
 
-/// <summary>A QRF report, compiled by typing a statement into the editor.</summary>
+/// <summary>A report compiled by typing a statement into the Progress editor.</summary>
 /// <param name="File">The local file, for its name and kind.</param>
 /// <param name="RemoteFile">The uploaded source on the server.</param>
 /// <param name="RemoteDirectory">Where the editor is told to save the result.</param>
@@ -37,7 +38,7 @@ public abstract record PlannedCompile(
 /// what Progress does.
 /// </param>
 /// <param name="Statement">The exact text that will be typed.</param>
-public sealed record PlannedQrfCompile(
+public sealed record PlannedEditorCompile(
     ProgramFile File,
     string RemoteFile,
     string RemoteDirectory,
@@ -46,7 +47,7 @@ public sealed record PlannedQrfCompile(
     : PlannedCompile(File, RemoteFile, [RemoteResult]);
 
 /// <summary>
-/// A SRC program, compiled by the batch script once per language.
+/// A program compiled by the batch script, once per language.
 /// </summary>
 /// <param name="File">The local file, for its name and kind.</param>
 /// <param name="RemoteFile">The uploaded source on the server.</param>
@@ -54,11 +55,27 @@ public sealed record PlannedQrfCompile(
 /// Language code to the <c>.r</c> it produces. Kept keyed by language so a
 /// half-successful compile can name which one failed.
 /// </param>
-public sealed record PlannedSrcCompile(
+public sealed record PlannedManifestCompile(
     ProgramFile File,
     string RemoteFile,
     IReadOnlyDictionary<string, string> Results)
     : PlannedCompile(File, RemoteFile, [.. Results.Values]);
+
+/// <summary>
+/// A program compiled by an ordinary shell command that finds its own work.
+/// </summary>
+/// <param name="File">The local file, for its name and kind.</param>
+/// <param name="RemoteFile">The uploaded source on the server.</param>
+/// <param name="RemoteResult">
+/// Where the command should write this program's output, or <c>null</c> when the
+/// site has not told us - in which case the command's exit code is the only
+/// signal available.
+/// </param>
+public sealed record PlannedShellCompile(
+    ProgramFile File,
+    string RemoteFile,
+    string? RemoteResult)
+    : PlannedCompile(File, RemoteFile, RemoteResult is null ? [] : [RemoteResult]);
 
 /// <summary>A program in the ticket that will not be compiled, and why.</summary>
 public sealed record SkippedProgram(ProgramFile File, string Reason);
@@ -84,18 +101,21 @@ public sealed record CompilePlan(
     string ClientId,
     string TicketName,
     QadEnvironment Environment,
-    IReadOnlyList<PlannedQrfCompile> Qrf,
-    IReadOnlyList<PlannedSrcCompile> Src,
+    IReadOnlyList<PlannedCompile> Compiles,
     IReadOnlyList<SkippedProgram> Skipped)
 {
-    /// <summary>Everything to compile, in a stable order, for display and reporting.</summary>
-    public IReadOnlyList<PlannedCompile> Compiles => [.. Src.Cast<PlannedCompile>(), .. Qrf];
-
     /// <summary>Nothing will be compiled - though there may still be skips to report.</summary>
-    public bool IsEmpty => Qrf.Count == 0 && Src.Count == 0;
+    public bool IsEmpty => Compiles.Count == 0;
 
     /// <summary>Whether this plan compiles on a production server.</summary>
     public bool IsProduction => Environment.IsProduction;
+
+    /// <summary>The entries driven by one procedure, in plan order.</summary>
+    public IReadOnlyList<T> Using<T>() where T : PlannedCompile => [.. Compiles.OfType<T>()];
+
+    /// <summary>Shell entries for one kind, which share a single command.</summary>
+    public IReadOnlyList<PlannedShellCompile> Shell(ProgramKind kind) =>
+        [.. Compiles.OfType<PlannedShellCompile>().Where(compile => compile.Kind == kind)];
 
     /// <summary>
     /// Works out what can be compiled in <paramref name="ticket"/>.
@@ -112,50 +132,61 @@ public sealed record CompilePlan(
         ArgumentNullException.ThrowIfNull(ticket);
         ArgumentNullException.ThrowIfNull(environment);
 
-        var qrf = new List<PlannedQrfCompile>();
-        var src = new List<PlannedSrcCompile>();
+        var compiles = new List<PlannedCompile>();
         var skipped = new List<SkippedProgram>();
 
-        foreach (var file in ticket.Files)
+        // SRC first, so a mixed ticket reaches the Progress editor last - it
+        // never exits, and the shell it runs in is unusable afterwards.
+        foreach (var file in ticket.Files.OrderBy(f => f.Kind == ProgramKind.Qrf))
         {
-            switch (file.Kind)
-            {
-                case ProgramKind.Qrf:
-                    PlanQrf(file, environment, qrf, skipped);
-                    break;
-
-                case ProgramKind.Src:
-                    PlanSrc(file, environment, src, skipped);
-                    break;
-
-                default:
-                    skipped.Add(new SkippedProgram(
-                        file,
-                        $"{file.Kind} programs have no compile procedure."));
-                    break;
-            }
+            Plan(file, environment, clientId, compiles, skipped);
         }
 
-        return new CompilePlan(clientId, ticket.Name, environment, qrf, src, skipped);
+        return new CompilePlan(clientId, ticket.Name, environment, compiles, skipped);
     }
 
-    private static void PlanQrf(
+    private static void Plan(
         ProgramFile file,
         QadEnvironment environment,
-        List<PlannedQrfCompile> planned,
+        string clientId,
+        List<PlannedCompile> compiles,
         List<SkippedProgram> skipped)
     {
-        if (environment.Compile.Qrf is not { } recipe)
+        var (block, editor, manifest, shell) = file.Kind switch
+        {
+            ProgramKind.Qrf => (
+                "compile.qrf",
+                environment.Compile.Qrf?.Editor,
+                null,
+                environment.Compile.Qrf?.Shell),
+
+            ProgramKind.Src => (
+                "compile.src",
+                (EditorCompileSettings?)null,
+                environment.Compile.Src?.Manifest,
+                environment.Compile.Src?.Shell),
+
+            _ => throw new ArgumentOutOfRangeException(nameof(file), file.Kind, "Unknown program kind.")
+        };
+
+        if (editor is null && manifest is null && shell is null)
         {
             skipped.Add(new SkippedProgram(
-                file, $"'{environment.Name}' has no 'compile.qrf' block in config.json."));
+                file, $"'{environment.Name}' has no '{block}' block in config.json."));
             return;
         }
 
-        if (environment.Paths.Qrf is not { } directory)
+        string directory;
+
+        try
         {
-            skipped.Add(new SkippedProgram(
-                file, $"'{environment.Name}' has no 'qrfRemotePath', so there is nothing to compile."));
+            directory = environment.Paths.Require(file, clientId, environment.Name);
+        }
+        catch (ConfigurationException ex)
+        {
+            // The upload treats this as fatal; here it is one program that
+            // cannot be compiled while the rest of the ticket still can.
+            skipped.Add(new SkippedProgram(file, ex.Message));
             return;
         }
 
@@ -163,35 +194,38 @@ public sealed record CompilePlan(
 
         var remoteFile = $"{directory}/{file.FileName}";
 
-        planned.Add(new PlannedQrfCompile(
+        if (editor is not null)
+        {
+            compiles.Add(new PlannedEditorCompile(
+                file,
+                remoteFile,
+                directory,
+                SwapExtension(remoteFile),
+                editor.StatementFor(remoteFile, directory)));
+
+            return;
+        }
+
+        if (manifest is not null)
+        {
+            PlanManifest(file, manifest, remoteFile, compiles, skipped);
+            return;
+        }
+
+        compiles.Add(new PlannedShellCompile(
             file,
             remoteFile,
-            directory,
-            SwapExtension(remoteFile),
-            recipe.StatementFor(remoteFile, directory)));
+            shell!.ResultFor(file.FileName, file.Prefix ?? string.Empty)));
     }
 
-    private static void PlanSrc(
+    private static void PlanManifest(
         ProgramFile file,
-        QadEnvironment environment,
-        List<PlannedSrcCompile> planned,
+        ManifestCompileSettings recipe,
+        string remoteFile,
+        List<PlannedCompile> compiles,
         List<SkippedProgram> skipped)
     {
-        if (environment.Compile.Src is not { } recipe)
-        {
-            skipped.Add(new SkippedProgram(
-                file, $"'{environment.Name}' has no 'compile.src' block in config.json."));
-            return;
-        }
-
-        if (environment.Paths.Src is not { } directory)
-        {
-            skipped.Add(new SkippedProgram(
-                file, $"'{environment.Name}' has no 'srcRemotePath', so there is nothing to compile."));
-            return;
-        }
-
-        if (PrefixOf(file.FileName) is not { } prefix)
+        if (file.Prefix is not { } prefix)
         {
             skipped.Add(new SkippedProgram(
                 file,
@@ -200,38 +234,12 @@ public sealed record CompilePlan(
             return;
         }
 
-        var remoteFile = $"{directory.TrimEnd('/')}/{file.FileName}";
-
         var results = recipe.Languages.ToDictionary(
             language => language.Key,
             language => $"{language.Value.TrimEnd('/')}/{prefix}/{SwapExtension(file.FileName)}",
             StringComparer.Ordinal);
 
-        planned.Add(new PlannedSrcCompile(file, remoteFile, results));
-    }
-
-    /// <summary>
-    /// The folder a SRC program's compiled output lands in, taken from the first
-    /// two characters of its name.
-    /// </summary>
-    /// <remarks>
-    /// <c>xx</c> marks a custom program, and the site's other prefixes work the
-    /// same way. The valid set is deliberately <b>not</b> listed here or in
-    /// config: the compiler checks the directory exists on the server instead, so
-    /// the server stays the source of truth and no list can quietly go stale.
-    /// </remarks>
-    private static string? PrefixOf(string fileName)
-    {
-        var dot = fileName.IndexOf('.');
-        var name = dot > 0 ? fileName[..dot] : fileName;
-
-        // Letters and digits only - l4, l5 and l6 are real prefixes, but a name
-        // like 'x.p' has nothing to take two characters from, and reading the
-        // dot as part of a folder name would point at a directory that cannot
-        // exist.
-        return name.Length >= 2 && char.IsLetterOrDigit(name[0]) && char.IsLetterOrDigit(name[1])
-            ? name[..2].ToLowerInvariant()
-            : null;
+        compiles.Add(new PlannedManifestCompile(file, remoteFile, results));
     }
 
     /// <summary>

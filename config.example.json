@@ -57,42 +57,53 @@
 
         // Both halves are optional. Leave one out and the tool will say that
         // kind cannot be compiled for this environment, rather than guessing.
+        //
+        // Each half names WHICH procedure the site uses. There are three, and
+        // exactly one must be named per kind:
+        //
+        //   editor    a Progress procedure editor driven by function keys
+        //   manifest  a list file plus a build script run once per language
+        //   shell     one ordinary command that finds its own work
+        //
+        // QRF can use 'editor' or 'shell'; SRC can use 'manifest' or 'shell'.
         "compile": {
 
-          // QRF reports: one Progress editor session per file. The tool opens
-          // the editor, presses F4, types the statement, presses F1, and then
-          // checks the .r timestamp to see whether it actually built.
+          // One editor session per report: F4, type the statement, F1. Then the
+          // .r timestamp is checked to see whether it actually built.
           "qrf": {
-            // The whole command, because its trailing argument names the
-            // environment and the binary's own path may too.
-            "editorCommand": "/qad/live/qrf/compile_editor us live",
+            "editor": {
+              // The whole command, because its trailing argument names the
+              // environment and the binary's own path may too.
+              "editorCommand": "/qad/live/qrf/compile_editor us live",
 
-            // Optional. Defaults to exactly this. Placeholders:
-            //   {remoteFile}       the uploaded .p, full remote path
-            //   {remoteDirectory}  where the .r should land
-            "statement": "compile {remoteFile} save into {remoteDirectory}."
+              // Optional. Defaults to exactly this. Placeholders:
+              //   {remoteFile}       the uploaded .p, full remote path
+              //   {remoteDirectory}  where the .r should land
+              "statement": "compile {remoteFile} save into {remoteDirectory}."
+            }
           },
 
-          // SRC programs: write the manifest, then run the compile script once
-          // per user language.
+          // Write the manifest, then run the compile script once per language.
           "src": {
-            // Overwritten each run with one bare filename per line. A fixed
-            // shared path - two people compiling at once would clash.
-            "manifestPath": "/qad/global/utcompil.wrk",
-            "workingDirectory": "/qad/global",
+            "manifest": {
+              // Overwritten each run with one bare filename per line. A fixed
+              // shared path - two people compiling at once would clash.
+              "manifestPath": "/qad/global/utcompil.wrk",
+              "workingDirectory": "/qad/global",
 
-            // Run once per language below. The environment is part of the
-            // command because it is the script's own argument.
-            "command": "./compile {language} live",
+              // Run once per language below. The environment is part of the
+              // command because it is the script's own argument.
+              "command": "./compile {language} live",
 
-            // Where each language's compiled output lands. The .r files sit one
-            // level deeper, in a folder named after the program's first two
-            // letters - so xxfoo.p becomes /qad/global/lt/xx/xxfoo.r and
-            // /qad/global/us/xx/xxfoo.r, and BOTH must build for the program to
-            // count as compiled.
-            "languages": {
-              "lt": "/qad/global/lt",
-              "us": "/qad/global/us"
+              // Where each language's compiled output lands. The .r files sit
+              // one level deeper, in a folder named after the program's first
+              // two letters - so xxfoo.p becomes /qad/global/lt/xx/xxfoo.r and
+              // /qad/global/us/xx/xxfoo.r, and BOTH must build for the program
+              // to count as compiled.
+              "languages": {
+                "lt": "/qad/global/lt",
+                "us": "/qad/global/us"
+              }
             }
           }
         }
@@ -125,10 +136,37 @@
         "host": "qad.example.local",
         "username": "CHANGE_ME",
         "password": "${SECOND_SSH_PASSWORD}",
-        "srcRemotePath": "/qad/src",
+        // {prefix} is the program's first two characters, so xxfoo.p goes to
+        // /qad/src/xx and sfbar.p to /qad/src/sf. Leave the placeholder out
+        // where a site keeps every SRC program in one directory.
+        "srcRemotePath": "/qad/src/{prefix}",
         "qrfRemotePath": "/qad/qrf",
-        // Omitted entirely: this client's compile procedure has not been
-        // mapped out yet. Uploading still works; `qad compile` will say so.
+
+        // This site has a build script that finds its own work, so there is
+        // nothing to list and nothing to type.
+        "compile": {
+          "qrf": {
+            "shell": {
+              "workingDirectory": "/qad/apps",
+              "command": "./build reports -v"
+            }
+          },
+
+          "src": {
+            "shell": {
+              "workingDirectory": "/qad/apps",
+              "command": "./build customizations -v",
+
+              // Optional, and worth setting. Without it the command's exit
+              // code is the only signal, so a script that always exits 0 would
+              // report a failed compile as a success. With it, these
+              // timestamps decide and the exit code is only reported.
+              //   {prefix}  the program's first two characters
+              //   {name}    the file name without its extension
+              "resultPath": "/qad/build/{prefix}/{name}.r"
+            }
+          }
+        }
       },
 
       "environments": [

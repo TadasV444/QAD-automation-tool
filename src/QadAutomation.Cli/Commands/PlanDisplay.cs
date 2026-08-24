@@ -66,31 +66,36 @@ internal static class PlanDisplay
     {
         if (!plan.IsEmpty)
         {
-            output.WriteLine($"{plan.Qrf.Count + plan.Src.Count} program(s) to compile:");
+            output.WriteLine($"{plan.Compiles.Count} program(s) to compile:");
             output.WriteLine();
 
-            foreach (var compile in plan.Src)
+            foreach (var compile in plan.Compiles)
             {
-                output.WriteLine($"  [SRC] {compile.File.FileName}");
+                output.WriteLine($"  [{compile.Kind.ToString().ToUpperInvariant()}] {compile.File.FileName}");
 
-                // Every language, because a SRC program is only compiled when
-                // all of them land - and a missing one here is the quickest way
-                // to notice a language is not configured.
-                foreach (var result in compile.Results.OrderBy(r => r.Key, StringComparer.Ordinal))
+                // The statement is shown in full because it is what will
+                // actually be typed. A wrong path here is the difference
+                // between compiling and compiling the wrong thing.
+                if (compile is PlannedEditorCompile editor)
                 {
-                    output.WriteLine($"      -> {result.Value}");
+                    output.WriteLine($"      {editor.Statement}");
                 }
-            }
 
-            foreach (var compile in plan.Qrf)
-            {
-                output.WriteLine($"  [QRF] {compile.File.FileName}");
+                // Every expected result, because a program that builds into two
+                // places only counts when both land - and a missing line here
+                // is the quickest way to notice a language is not configured.
+                foreach (var result in compile.RemoteResults)
+                {
+                    output.WriteLine($"      -> {result}");
+                }
 
-                // Shown in full because it is what will actually be typed. A
-                // wrong path here is the difference between compiling and
-                // compiling the wrong thing.
-                output.WriteLine($"      {compile.Statement}");
-                output.WriteLine($"      -> {compile.RemoteResult}");
+                // Said plainly rather than left as an absence. Without a result
+                // to check, the verdict rests on the command's exit code, and
+                // that is worth knowing before a production run.
+                if (compile.RemoteResults.Count == 0)
+                {
+                    output.WriteLine("      -> verified by the command's exit code only");
+                }
             }
 
             output.WriteLine();

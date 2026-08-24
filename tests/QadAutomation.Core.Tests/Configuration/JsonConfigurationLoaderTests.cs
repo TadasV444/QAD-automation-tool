@@ -164,7 +164,7 @@ public sealed class JsonConfigurationLoaderTests : IDisposable
                 "password": "secret",
                 "srcRemotePath": "/qad/src",
                 "qrfRemotePath": "/qad/qrf",
-                "compile": { "qrf": { "editorCommand": "/qad/qrf/compile_editor us devl" } }
+                "compile": { "qrf": { "editor": { "editorCommand": "/qad/qrf/compile_editor us devl" } } }
               },
               "environments": [ { "name": "DEVL" } ]
             }

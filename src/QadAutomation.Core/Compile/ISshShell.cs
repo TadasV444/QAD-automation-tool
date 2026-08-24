@@ -52,6 +52,30 @@ public interface ISshShellFactory
 }
 
 /// <summary>
+/// How the tool asks a plain shell for the last command's exit status.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A shell stream carries no out-of-band result, so the only way to learn an
+/// exit code is to make the shell print it. Echoing
+/// <c>{marker}$?</c> immediately after the command does that.
+/// </para>
+/// <para>
+/// The marker is deliberately unlike anything a build script would print. A bare
+/// number could not be told apart from the script's own output, and matching the
+/// wrong line would invent a verdict rather than fail to find one.
+/// </para>
+/// </remarks>
+public static class ShellProtocol
+{
+    /// <summary>Prefixes the echoed exit code.</summary>
+    public const string ExitMarker = "__QAD_EXIT__";
+
+    /// <summary>The command that echoes the previous command's status.</summary>
+    public static string EchoExitCode => $"echo {ExitMarker}$?";
+}
+
+/// <summary>
 /// The keystrokes the Progress procedure editor responds to.
 /// </summary>
 /// <remarks>

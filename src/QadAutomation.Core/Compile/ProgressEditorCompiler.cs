@@ -46,23 +46,23 @@ internal sealed class ProgressEditorCompiler
     public ProgressEditorCompiler(ISshShellFactory shells) => _shells = shells;
 
     public IReadOnlyList<CompiledProgram> Compile(
-        CompilePlan plan,
-        QrfCompileSettings recipe,
+        IReadOnlyList<PlannedEditorCompile> planned,
+        EditorCompileSettings recipe,
         ISftpSession session,
         SshEndpoint endpoint,
         Action<string> report)
     {
-        VerifySourcesExist(plan, session);
+        VerifySourcesExist(planned, session);
 
         // Read before anything is typed. Asking afterwards could only say what
         // the timestamp is, not whether it moved.
-        var before = plan.Qrf.ToDictionary(
+        var before = planned.ToDictionary(
             compile => compile,
             compile => session.LastWriteTime(compile.RemoteResult));
 
-        var screens = RunEditor(plan, recipe, endpoint, report);
+        var screens = RunEditor(planned, recipe, endpoint, report);
 
-        return [.. plan.Qrf.Select(compile =>
+        return [.. planned.Select(compile =>
         {
             var after = session.LastWriteTime(compile.RemoteResult);
             var result = Moved(before[compile], after) ? CompileResult.Compiled : CompileResult.Failed;
@@ -82,13 +82,13 @@ internal sealed class ProgressEditorCompiler
     /// clear the buffer. That mirrors the manual procedure, where F4 is what
     /// makes the window ready to accept a statement.
     /// </remarks>
-    private Dictionary<PlannedQrfCompile, string> RunEditor(
-        CompilePlan plan,
-        QrfCompileSettings recipe,
+    private Dictionary<PlannedEditorCompile, string> RunEditor(
+        IReadOnlyList<PlannedEditorCompile> planned,
+        EditorCompileSettings recipe,
         SshEndpoint endpoint,
         Action<string> report)
     {
-        var screens = new Dictionary<PlannedQrfCompile, string>();
+        var screens = new Dictionary<PlannedEditorCompile, string>();
 
         // Disposing the shell closes the channel, which is how this editor is
         // left - it has no exit key here, and the manual procedure is to close
@@ -102,7 +102,7 @@ internal sealed class ProgressEditorCompiler
         shell.Send(recipe.EditorCommand + ProgressKeys.Enter);
         shell.ReadUntilIdle(SettleFor, StepTimeout);
 
-        foreach (var compile in plan.Qrf)
+        foreach (var compile in planned)
         {
             report($"  {compile.Statement}");
 
@@ -140,9 +140,9 @@ internal sealed class ProgressEditorCompiler
     /// understand. The likely cause - forgetting <c>qad upload</c> - deserves to
     /// be said in one line.
     /// </remarks>
-    private static void VerifySourcesExist(CompilePlan plan, ISftpSession session)
+    private static void VerifySourcesExist(IReadOnlyList<PlannedEditorCompile> planned, ISftpSession session)
     {
-        var missing = plan.Qrf
+        var missing = planned
             .Where(compile => !session.Exists(compile.RemoteFile))
             .Select(compile => compile.RemoteFile)
             .ToList();

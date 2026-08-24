@@ -35,7 +35,7 @@ namespace QadAutomation.Core.Compile;
 /// reported - correctly - as a failure.
 /// </para>
 /// </remarks>
-internal sealed class SrcBatchCompiler
+internal sealed class ManifestBatchCompiler
 {
     /// <summary>
     /// How long output must stop before the script is considered finished.
@@ -52,25 +52,25 @@ internal sealed class SrcBatchCompiler
 
     private readonly ISshShellFactory _shells;
 
-    public SrcBatchCompiler(ISshShellFactory shells) => _shells = shells;
+    public ManifestBatchCompiler(ISshShellFactory shells) => _shells = shells;
 
     public IReadOnlyList<CompiledProgram> Compile(
-        CompilePlan plan,
-        SrcCompileSettings recipe,
+        IReadOnlyList<PlannedManifestCompile> planned,
+        ManifestCompileSettings recipe,
         ISftpSession session,
         SshEndpoint endpoint,
         Action<string> report)
     {
-        VerifySourcesExist(plan, session);
-        VerifyResultDirectoriesExist(plan, session);
+        VerifySourcesExist(planned, session);
+        VerifyResultDirectoriesExist(planned, session);
 
-        var before = plan.Src.ToDictionary(
+        var before = planned.ToDictionary(
             compile => compile,
             compile => Timestamps(compile, session));
 
-        var screen = RunScript(plan, recipe, session, endpoint, report);
+        var screen = RunScript(planned, recipe, session, endpoint, report);
 
-        return [.. plan.Src.Select(compile =>
+        return [.. planned.Select(compile =>
         {
             var after = Timestamps(compile, session);
 
@@ -99,17 +99,17 @@ internal sealed class SrcBatchCompiler
     /// per program and exact.
     /// </remarks>
     private string RunScript(
-        CompilePlan plan,
-        SrcCompileSettings recipe,
+        IReadOnlyList<PlannedManifestCompile> planned,
+        ManifestCompileSettings recipe,
         ISftpSession session,
         SshEndpoint endpoint,
         Action<string> report)
     {
         // One bare filename per line. Written immediately before the run, and
         // trailing newline included so the last entry is a complete line.
-        var manifest = string.Concat(plan.Src.Select(compile => compile.File.FileName + "\n"));
+        var manifest = string.Concat(planned.Select(compile => compile.File.FileName + "\n"));
 
-        report($"Writing {plan.Src.Count} program name(s) to {recipe.ManifestPath}");
+        report($"Writing {planned.Count} program name(s) to {recipe.ManifestPath}");
         session.WriteText(recipe.ManifestPath, manifest);
 
         using var shell = _shells.Open(endpoint);
@@ -142,7 +142,7 @@ internal sealed class SrcBatchCompiler
     }
 
     private static Dictionary<string, DateTimeOffset?> Timestamps(
-        PlannedSrcCompile compile, ISftpSession session) =>
+        PlannedManifestCompile compile, ISftpSession session) =>
         compile.Results.ToDictionary(
             result => result.Key,
             result => session.LastWriteTime(result.Value),
@@ -151,9 +151,9 @@ internal sealed class SrcBatchCompiler
     private static bool Moved(DateTimeOffset? before, DateTimeOffset? after) =>
         ProgressEditorCompiler.Moved(before, after);
 
-    private static void VerifySourcesExist(CompilePlan plan, ISftpSession session)
+    private static void VerifySourcesExist(IReadOnlyList<PlannedManifestCompile> planned, ISftpSession session)
     {
-        var missing = plan.Src
+        var missing = planned
             .Where(compile => !session.Exists(compile.RemoteFile))
             .Select(compile => compile.RemoteFile)
             .ToList();
@@ -177,9 +177,9 @@ internal sealed class SrcBatchCompiler
     /// failure and send someone hunting through Progress errors for a naming
     /// mistake.
     /// </remarks>
-    private static void VerifyResultDirectoriesExist(CompilePlan plan, ISftpSession session)
+    private static void VerifyResultDirectoriesExist(IReadOnlyList<PlannedManifestCompile> planned, ISftpSession session)
     {
-        var missing = plan.Src
+        var missing = planned
             .SelectMany(compile => compile.Results.Values)
             .Select(Directory)
             .Distinct(StringComparer.Ordinal)

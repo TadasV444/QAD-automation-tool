@@ -13,21 +13,23 @@ namespace QadAutomation.Core.Tests.Compile;
 /// <para>
 /// Like <c>FakeSftpServer</c>, this models the counterparty rather than
 /// recording expectations - but it cannot go as far, because there is no
-/// in-memory Progress editor to run. What it does model faithfully is the one
-/// thing that matters: a successful compile touches the <c>.r</c> on the server.
-/// Point <see cref="CompilesInto"/> at a <c>FakeSftpServer</c> and typing the
-/// statement really does move the timestamp the compiler will read.
+/// in-memory Progress editor to run. What it does model faithfully are the two
+/// things that decide a verdict: a successful compile touches files on the
+/// server, and a plain command answers when asked for its exit status. Set
+/// <see cref="Server"/> and <see cref="Produces"/> and starting a compile really
+/// does move the timestamps the compiler will read.
 /// </para>
 /// <para>
-/// That keeps the tests honest about the part that decides the verdict. A test
-/// asserting only "F1 was sent" would pass for a compiler that never checked
-/// whether anything was built.
+/// That keeps the tests honest about the part that matters. A test asserting
+/// only "F1 was sent" would pass for a compiler that never checked whether
+/// anything was built.
 /// </para>
 /// </remarks>
 internal sealed class FakeSshShell : ISshShellFactory, ISshShell
 {
     private readonly List<string> _sent = [];
     private int _goCount;
+    private bool _awaitingExitCode;
 
     /// <summary>Everything sent, in order, including the key sequences.</summary>
     public IReadOnlyList<string> Sent => _sent;
@@ -44,6 +46,16 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
 
     /// <summary>Set to throw when the shell is opened.</summary>
     public TransferException? OpenFailure { get; set; }
+
+    /// <summary>
+    /// What the shell reports when asked for the last command's exit status.
+    /// </summary>
+    /// <remarks>
+    /// Null models a shell that never answers - the marker echo producing
+    /// nothing recognisable - which is how a compiler that trusts an absent
+    /// exit code gets caught.
+    /// </remarks>
+    public int? ExitCode { get; set; }
 
     /// <summary>The server a successful compile writes its <c>.r</c> to.</summary>
     public FakeSftpServer? Server { get; set; }
@@ -76,6 +88,12 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
     {
         _sent.Add(text);
 
+        if (text.Contains(ShellProtocol.ExitMarker, StringComparison.Ordinal))
+        {
+            _awaitingExitCode = true;
+            return;
+        }
+
         if (!IsCompileTrigger(text))
         {
             return;
@@ -106,7 +124,22 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
     private static bool IsCompileTrigger(string text) =>
         text == ProgressKeys.Go || text.StartsWith("./", StringComparison.Ordinal);
 
-    public string ReadUntilIdle(TimeSpan idleFor, TimeSpan timeout) => Screen;
+    public string ReadUntilIdle(TimeSpan idleFor, TimeSpan timeout)
+    {
+        if (!_awaitingExitCode)
+        {
+            return Screen;
+        }
+
+        _awaitingExitCode = false;
+
+        // Both occurrences a real shell produces: the echoed command line, then
+        // its output. A compiler that read the first would report '$?' as the
+        // status of every run.
+        return ExitCode is { } code
+            ? $"echo {ShellProtocol.ExitMarker}$?\n{ShellProtocol.ExitMarker}{code}\n"
+            : $"echo {ShellProtocol.ExitMarker}$?\n";
+    }
 
     public void Dispose() => IsDisposed = true;
 }

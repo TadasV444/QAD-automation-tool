@@ -15,7 +15,7 @@ public sealed class CompilePlanTests
     [Fact]
     public void A_qrf_report_is_compiled_into_its_own_directory()
     {
-        var compile = Assert.Single(Plan(Qrf("rep.p")).Qrf);
+        var compile = Assert.Single(Plan(Qrf("rep.p")).Using<PlannedEditorCompile>());
 
         Assert.Equal($"{QrfPath}/rep.p", compile.RemoteFile);
         Assert.Equal(
@@ -28,7 +28,7 @@ public sealed class CompilePlanTests
     {
         // This is the whole verification mechanism: get it wrong and every
         // compile reports failure, or worse, checks a file nobody is writing.
-        var compile = Assert.Single(Plan(Qrf("rep.p")).Qrf);
+        var compile = Assert.Single(Plan(Qrf("rep.p")).Using<PlannedEditorCompile>());
 
         Assert.Equal($"{QrfPath}/rep.r", compile.RemoteResult);
     }
@@ -39,7 +39,7 @@ public sealed class CompilePlanTests
         var environment = Environment(qrf: "/appl/v8.2/reports");
 
         var compile = Assert.Single(
-            CompilePlan.Create(Ticket(Qrf("noext")), environment, "pilot").Qrf);
+            CompilePlan.Create(Ticket(Qrf("noext")), environment, "pilot").Using<PlannedEditorCompile>());
 
         Assert.Equal("/appl/v8.2/reports/noext.r", compile.RemoteResult);
     }
@@ -50,7 +50,7 @@ public sealed class CompilePlanTests
         var environment = Environment(qrf: QrfPath + "/");
 
         var compile = Assert.Single(
-            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Qrf);
+            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Using<PlannedEditorCompile>());
 
         Assert.Equal($"{QrfPath}/rep.p", compile.RemoteFile);
         Assert.DoesNotContain("//", compile.Statement, StringComparison.Ordinal);
@@ -64,8 +64,8 @@ public sealed class CompilePlanTests
         // is configured for QRF only.
         var plan = Plan(Qrf("rep.p"), Src("xxprog.p"));
 
-        Assert.Single(plan.Qrf);
-        Assert.Empty(plan.Src);
+        Assert.Single(plan.Using<PlannedEditorCompile>());
+        Assert.Empty(plan.Using<PlannedManifestCompile>());
 
         var skipped = Assert.Single(plan.Skipped);
 
@@ -98,10 +98,10 @@ public sealed class CompilePlanTests
     public void A_custom_statement_template_is_used_verbatim()
     {
         var environment = Environment(
-            recipe: new QrfCompileSettings("editor", "COMPILE {remoteFile} SAVE INTO {remoteDirectory} XREF x."));
+            recipe: new EditorCompileSettings("editor", "COMPILE {remoteFile} SAVE INTO {remoteDirectory} XREF x."));
 
         var compile = Assert.Single(
-            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Qrf);
+            CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Using<PlannedEditorCompile>());
 
         Assert.Equal($"COMPILE {QrfPath}/rep.p SAVE INTO {QrfPath} XREF x.", compile.Statement);
     }
@@ -129,23 +129,23 @@ public sealed class CompilePlanTests
     private static CompilePlan Plan(params ProgramFile[] files) =>
         CompilePlan.Create(Ticket(files), Environment(), "pilot");
 
-    private static readonly QrfCompileSettings DefaultRecipe =
-        new("compile_editor us test", QrfCompileSettings.DefaultStatementTemplate);
+    private static readonly EditorCompileSettings DefaultRecipe =
+        new("compile_editor us test", EditorCompileSettings.DefaultStatementTemplate);
 
     /// <summary>An environment that can compile QRF, unless told otherwise.</summary>
     private static QadEnvironment Environment(
         string? qrf = QrfPath,
-        QrfCompileSettings? recipe = null) =>
+        EditorCompileSettings? recipe = null) =>
         Build(qrf, recipe ?? DefaultRecipe);
 
     /// <summary>An environment whose QRF recipe has not been worked out yet.</summary>
     private static QadEnvironment EnvironmentWithoutRecipe() => Build(QrfPath, null);
 
-    private static QadEnvironment Build(string? qrf, QrfCompileSettings? recipe) =>
+    private static QadEnvironment Build(string? qrf, EditorCompileSettings? recipe) =>
         new(
             "TEST",
             false,
             new SshEndpoint("qad.example", 22, "mfg", "hunter2", null),
             new RemotePaths(SrcPath, qrf),
-            new CompileSettings(recipe, null));
+            new CompileSettings(recipe is null ? null : new QrfCompileSettings(recipe, null), null));
 }
