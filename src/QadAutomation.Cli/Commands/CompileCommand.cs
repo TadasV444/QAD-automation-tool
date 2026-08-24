@@ -177,8 +177,19 @@ public sealed class CompileCommand
             // messages are whole sentences, so nothing real is this short.
             .Where(line => line.Length >= 3 && !IsBoxDrawing(line))
             .Distinct(StringComparer.Ordinal)
-            .Take(20)];
+            // The TAIL, not the head. A build script opens with a banner of
+            // paths and version numbers and says what went wrong at the end;
+            // keeping the first lines showed a verbose log's startup and none
+            // of its outcome. The editor's screens are shorter than this, so
+            // they are unaffected.
+            .TakeLast(MaxScreenLines)];
     }
+
+    /// <summary>
+    /// Enough for a Progress error box and the lines around a build failure,
+    /// without reprinting an entire verbose log per program.
+    /// </summary>
+    private const int MaxScreenLines = 30;
 
     /// <summary>
     /// ANSI escape sequences: cursor moves, colour, and character-set selection.

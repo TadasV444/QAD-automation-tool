@@ -140,6 +140,25 @@ public sealed class CompileCommandTests : IDisposable
     }
 
     [Fact]
+    public void A_long_build_log_is_trimmed_from_the_front_not_the_back()
+    {
+        // A verbose build script opens with a banner of paths and versions and
+        // says what went wrong at the end. Keeping the first lines showed the
+        // startup of every failed compile and the outcome of none - which read
+        // as if the tool had cut the log short.
+        Uploaded("rep_b.p");
+        _server.WithFile($"{QrfPath}/rep_b.r", "STALE");
+
+        var banner = string.Join("\n", Enumerable.Range(1, 60).Select(i => $"DEBUG startup line {i}"));
+        _shell.Screen = $"{banner}\n** Compilation failed for rep_b.p\n";
+
+        var (_, _, error) = Run("compile", "pilot", "TEST", "9999555");
+
+        Assert.Contains("** Compilation failed for rep_b.p", error);
+        Assert.DoesNotContain("startup line 1\r", error);
+    }
+
+    [Fact]
     public void Plain_output_keeps_its_own_line_breaks()
     {
         // The SRC compile script is an ordinary program, not a cursor-addressed
