@@ -85,6 +85,31 @@ public sealed class SrcCompileTests
     }
 
     [Fact]
+    public void Each_command_is_followed_by_an_enter_to_clear_the_scripts_dialog()
+    {
+        // The script raises a harmless warning and blocks on <OK>. Found on the
+        // first real run: without this the second language's command was typed
+        // into the dialog, so lt built, us did not, and the run failed.
+        Uploaded("xxfoo.p");
+        Builds("xxfoo");
+
+        Compile("xxfoo.p");
+
+        var afterCommands = _shell.Sent
+            .SkipWhile(text => !text.StartsWith("./", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Equal(
+            [
+                "./compile lt test" + ProgressKeys.Enter,
+                ProgressKeys.Enter,
+                "./compile us test" + ProgressKeys.Enter,
+                ProgressKeys.Enter
+            ],
+            afterCommands);
+    }
+
+    [Fact]
     public void A_program_that_builds_in_both_languages_is_a_success()
     {
         Uploaded("xxfoo.p");

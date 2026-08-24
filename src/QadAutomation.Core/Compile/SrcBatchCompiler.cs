@@ -27,6 +27,13 @@ namespace QadAutomation.Core.Compile;
 /// but it is why the manifest is written as late as possible, immediately before
 /// the script runs.
 /// </para>
+/// <para>
+/// <b>The script is not fire-and-forget.</b> It raises a long-standing warning
+/// dialog and blocks on <c>&lt;OK&gt;</c>, so an Enter follows every command.
+/// Found the hard way: the first real run typed the second language's command
+/// into that dialog, which built <c>lt</c>, left <c>us</c> untouched, and was
+/// reported - correctly - as a failure.
+/// </para>
 /// </remarks>
 internal sealed class SrcBatchCompiler
 {
@@ -121,6 +128,13 @@ internal sealed class SrcBatchCompiler
             report($"  {command}");
 
             shell.Send(command + ProgressKeys.Enter);
+            captured.Add(shell.ReadUntilIdle(SettleFor, CommandTimeout));
+
+            // The script raises a harmless warning dialog and waits on <OK>.
+            // Nothing after this point in the shell is read until it is
+            // dismissed - the first real run typed the second language's
+            // command straight into the dialog, so 'lt' built and 'us' did not.
+            shell.Send(ProgressKeys.Enter);
             captured.Add(shell.ReadUntilIdle(SettleFor, CommandTimeout));
         }
 

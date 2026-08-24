@@ -175,7 +175,7 @@ public sealed class CompileCommand
             // Three characters, because splitting on escape sequences chops the
             // box's "<OK>" button into fragments like "<" and "K>". Progress
             // messages are whole sentences, so nothing real is this short.
-            .Where(line => line.Length >= 3)
+            .Where(line => line.Length >= 3 && !IsBoxDrawing(line))
             .Distinct(StringComparer.Ordinal)
             .Take(20)];
     }
@@ -184,12 +184,20 @@ public sealed class CompileCommand
     /// ANSI escape sequences: cursor moves, colour, and character-set selection.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Non-capturing: <see cref="Regex.Split(string)"/> returns the contents of
     /// capturing groups as elements, which would put the escape sequences
     /// straight back into the output it is meant to remove them from.
+    /// </para>
+    /// <para>
+    /// Real newlines split too. The <b>editor</b> moves its cursor instead of
+    /// writing them, but the SRC compile script is an ordinary program whose
+    /// output is plain lines - without this, a whole banner of shell output
+    /// collapses into one unreadable run-on.
+    /// </para>
     /// </remarks>
     private static readonly Regex EscapeSequence =
-        new(@"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)", RegexOptions.Compiled);
+        new(@"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)|[\r\n]+", RegexOptions.Compiled);
 
     /// <summary>
     /// Removes the box the editor draws around an error, leaving its contents.
@@ -223,6 +231,19 @@ public sealed class CompileCommand
     /// Three or more, so a real word ending in <c>qq</c> is never touched.
     /// </summary>
     private static readonly Regex HorizontalRule = new("q{3,}", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Whether a row is only box corners and edges - <c>l kl k l k</c> and the
+    /// like, left behind when several boxes are drawn side by side.
+    /// </summary>
+    /// <remarks>
+    /// Requires every character to be a border glyph, so any row carrying an
+    /// actual message survives. A word made only of these letters is possible in
+    /// principle and would be lost; three characters of nothing but <c>lkmjxtu</c>
+    /// has not been observed in any real Progress message.
+    /// </remarks>
+    private static bool IsBoxDrawing(string line) =>
+        line.All(c => c is 'l' or 'k' or 'm' or 'j' or 'x' or 't' or 'u' or 'q' or ' ');
 }
 
 /// <summary>Switches affecting how a compile runs.</summary>
