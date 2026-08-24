@@ -140,6 +140,24 @@ public sealed class CompileCommandTests : IDisposable
     }
 
     [Fact]
+    public void Plain_output_keeps_its_own_line_breaks()
+    {
+        // The SRC compile script is an ordinary program, not a cursor-addressed
+        // editor, so its output arrives as real lines. The first run collapsed a
+        // whole banner into one run-on because only escape sequences were
+        // treated as breaks.
+        Uploaded("rep_b.p");
+        _server.WithFile($"{QrfPath}/rep_b.r", "STALE");
+        _shell.Screen = "SEMSETS= 31\nSPIN=10000\nNo such file or directory\n";
+
+        var (_, _, error) = Run("compile", "pilot", "TEST", "9999555");
+
+        Assert.Contains("    SEMSETS= 31", error);
+        Assert.Contains("    SPIN=10000", error);
+        Assert.DoesNotContain("SEMSETS= 31SPIN=10000", error);
+    }
+
+    [Fact]
     public void A_src_program_is_reported_as_not_compiled_and_the_run_is_not_clean()
     {
         // A ticket whose SRC half was silently left unbuilt, reported as
