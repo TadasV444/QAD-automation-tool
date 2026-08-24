@@ -72,6 +72,12 @@ public sealed class VpnSection
     public string? ConnectionName { get; set; }
     public string? Username { get; set; }
     public string? Password { get; set; }
+
+    /// <summary>
+    /// Distinctive text from the tunnel's network adapter. Only for types the
+    /// tool verifies rather than dials, and only when the defaults miss it.
+    /// </summary>
+    public string? AdapterName { get; set; }
 }
 
 /// <summary>Compile recipes for a client default or a single environment.</summary>

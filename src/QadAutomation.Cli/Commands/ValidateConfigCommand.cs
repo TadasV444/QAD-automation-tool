@@ -101,7 +101,15 @@ public sealed class ValidateConfigCommand
         VpnType.WindowsRas =>
             $"Windows RAS, connection '{vpn.ConnectionName}', " +
             $"password {SecretDisplay.Describe(vpn.Password)}",
-        VpnType.FortiClient => "FortiClient",
+
+        // Says "checked", not "connected". This screen is where an operator
+        // forms their idea of what the tool will do for them, and believing it
+        // dials a tunnel it only inspects is the misunderstanding to prevent.
+        VpnType.FortiClient =>
+            $"FortiClient tunnel '{vpn.ConnectionName}' - checked, not connected " +
+            $"(open it in FortiClient yourself); adapter matched on " +
+            $"{(vpn.AdapterName is { } name ? $"'{name}'" : "the vendor's usual names")}",
+
         _ => vpn.Type.ToString()
     };
 }

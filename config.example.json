@@ -24,7 +24,17 @@
       "displayName": "Pilot Client",
 
       "vpn": {
-        // None | WindowsRas | FortiClient
+        // None       - the tool neither dials nor checks; you are on the
+        //              network already, and a bad guess shows up as an SSH
+        //              failure a moment later.
+        // WindowsRas - dialled with rasdial, and disconnected afterwards if
+        //              this run was what opened it.
+        // FortiClient- CHECKED, not dialled. FortiClient ships no connect
+        //              command and its SSL-VPN cannot be dialled by Windows
+        //              either, so the tool confirms the tunnel's network
+        //              adapter is up and stops with a clear message if it is
+        //              not. You click Connect once; everything after that is
+        //              automated. See the second client below.
         "type": "WindowsRas",
         // Exactly as `Get-VpnConnection | Select-Object Name` reports it.
         "connectionName": "EXAMPLE-VPN"
@@ -126,10 +136,24 @@
       "displayName": "Second Client",
 
       "vpn": {
-        // "None" means the tool does not bring the VPN up - connect by hand
-        // first. Deliberate for FortiClient sites: UI automation is the one
-        // fragile part of an otherwise protocol-level design.
-        "type": "None"
+        "type": "FortiClient",
+
+        // The tunnel's name in FortiClient. Used to name it in the message
+        // asking you to connect it, which is this type's whole behaviour.
+        "connectionName": "EXAMPLE-TUNNEL",
+
+        // Optional. The tool recognises the tunnel by its network adapter, and
+        // by default matches the names Fortinet's driver usually takes. Set
+        // this only if 'qad vpn status' reports disconnected while FortiClient
+        // shows connected - the error lists every adapter that is up, so put
+        // distinctive text from the right one here.
+        //
+        // "adapterName": "EXAMPLE-TUNNEL"
+
+        // No username or password: nothing reads them for this type. Keep the
+        // real ones in .env anyway - that is where a client's credentials
+        // belong, and it is the first place to look if FortiClient ever gains
+        // a usable command line.
       },
 
       "defaults": {

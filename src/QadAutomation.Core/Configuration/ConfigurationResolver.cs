@@ -149,11 +149,23 @@ public sealed class ConfigurationResolver
                 $"(the name of the saved Windows VPN connection).");
         }
 
+        // FortiClient is verified, not dialled, and the message that says so
+        // names the tunnel. Without a name the operator is told to connect
+        // something the tool cannot identify.
+        if (type == VpnType.FortiClient && string.IsNullOrWhiteSpace(vpn.ConnectionName))
+        {
+            errors.Add(
+                $"Client '{clientId}': vpn type 'FortiClient' requires 'connectionName' " +
+                "(the tunnel's name in FortiClient), so the tool can name it when asking " +
+                "you to connect it.");
+        }
+
         return new VpnSettings(
             type,
             Trimmed(vpn.ConnectionName),
             Trimmed(vpn.Username),
-            vpn.Password);
+            vpn.Password,
+            Trimmed(vpn.AdapterName));
     }
 
     private static QadEnvironment? ResolveEnvironment(

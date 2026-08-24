@@ -193,6 +193,30 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
+    public void A_forticlient_vpn_needs_the_tunnels_name()
+    {
+        // The tool cannot dial this one, so the whole of its behaviour is a
+        // message asking the operator to connect it. Without a name that
+        // message cannot say what to connect.
+        var file = FileWith(client => client.Vpn = new VpnSection { Type = "FortiClient" });
+
+        Assert.Contains("connectionName", ResolveError(file), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_forticlient_vpn_can_name_the_adapter_to_look_for()
+    {
+        var file = FileWith(client => client.Vpn = new VpnSection
+        {
+            Type = "FortiClient",
+            ConnectionName = "Tunnel",
+            AdapterName = "Example-Tunnel"
+        });
+
+        Assert.Equal("Example-Tunnel", Resolve(file).Clients[0].Vpn.AdapterName);
+    }
+
+    [Fact]
     public void A_missing_compile_block_is_not_an_error()
     {
         // Uploading works without compiling, and SRC has no verified recipe yet.

@@ -7,8 +7,18 @@ namespace QadAutomation.Core.Vpn;
 public sealed class VpnConnectorFactory : IVpnConnectorFactory
 {
     private readonly IProcessRunner _processRunner;
+    private readonly INetworkInterfaces _interfaces;
 
-    public VpnConnectorFactory(IProcessRunner processRunner) => _processRunner = processRunner;
+    /// <param name="processRunner">Runs <c>rasdial</c> for the Windows RAS type.</param>
+    /// <param name="interfaces">
+    /// Overridable so the FortiClient path can be exercised without a tunnel.
+    /// Defaults to the real thing, so existing callers are unaffected.
+    /// </param>
+    public VpnConnectorFactory(IProcessRunner processRunner, INetworkInterfaces? interfaces = null)
+    {
+        _processRunner = processRunner;
+        _interfaces = interfaces ?? new NetworkInterfaces();
+    }
 
     /// <inheritdoc />
     public IVpnConnector Create(VpnSettings settings)
@@ -20,14 +30,9 @@ public sealed class VpnConnectorFactory : IVpnConnectorFactory
             VpnType.None => new NullVpnConnector(),
             VpnType.WindowsRas => new RasDialVpnConnector(_processRunner),
 
-            // Configurable but not yet automated, and the message says so plainly.
-            // FortiClient exposes no supported command-line equivalent of
-            // rasdial, so automating it means driving its window - the one
-            // genuinely fragile technique in an otherwise protocol-level design,
-            // and not something to build before the RAS path has proved itself.
-            VpnType.FortiClient => throw new VpnException(
-                "FortiClient cannot be connected by this tool yet. Connect it by hand " +
-                "first, and set the client's vpn type to 'None' so the tool stops asking."),
+            // Verifies rather than dials - see FortiClientVpnConnector for why
+            // that is the honest ceiling for this client.
+            VpnType.FortiClient => new FortiClientVpnConnector(_interfaces),
 
             _ => throw new VpnException($"No connector exists for VPN type '{settings.Type}'.")
         };
