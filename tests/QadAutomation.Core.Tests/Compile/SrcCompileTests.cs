@@ -28,7 +28,7 @@ public sealed class SrcCompileTests
     [Fact]
     public void A_program_is_compiled_into_one_folder_per_language()
     {
-        var compile = Assert.Single(Plan("xxfoo.p").Src);
+        var compile = Assert.Single(Plan("xxfoo.p").Using<PlannedManifestCompile>());
 
         Assert.Equal($"{SrcPath}/xxfoo.p", compile.RemoteFile);
         Assert.Equal($"{LtRoot}/xx/xxfoo.r", compile.Results["lt"]);
@@ -41,7 +41,7 @@ public sealed class SrcCompileTests
         // xx is a custom program; gp, ic, so and the rest work the same way.
         // Deliberately not a list in code or config - the compiler checks the
         // directory exists on the server, so nothing can go stale.
-        var compile = Assert.Single(Plan("sofoo.p").Src);
+        var compile = Assert.Single(Plan("sofoo.p").Using<PlannedManifestCompile>());
 
         Assert.Equal($"{LtRoot}/so/sofoo.r", compile.Results["lt"]);
     }
@@ -51,7 +51,7 @@ public sealed class SrcCompileTests
     {
         var plan = Plan("x.p");
 
-        Assert.Empty(plan.Src);
+        Assert.Empty(plan.Using<PlannedManifestCompile>());
         Assert.Contains("prefix", Assert.Single(plan.Skipped).Reason, StringComparison.Ordinal);
     }
 
@@ -252,10 +252,12 @@ public sealed class SrcCompileTests
             new CompileSettings(
                 qrf is null
                     ? null
-                    : new QrfCompileSettings("compile_editor us test", QrfCompileSettings.DefaultStatementTemplate),
+                    : new QrfCompileSettings(new EditorCompileSettings("compile_editor us test", EditorCompileSettings.DefaultStatementTemplate), null),
                 new SrcCompileSettings(
-                    Manifest,
-                    "/appl/global",
-                    "./compile {language} test",
-                    new Dictionary<string, string> { ["lt"] = LtRoot, ["us"] = UsRoot })));
+                    new ManifestCompileSettings(
+                        Manifest,
+                        "/appl/global",
+                        "./compile {language} test",
+                        new Dictionary<string, string> { ["lt"] = LtRoot, ["us"] = UsRoot }),
+                    null)));
 }

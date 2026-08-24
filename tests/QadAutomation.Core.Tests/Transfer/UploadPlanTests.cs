@@ -102,6 +102,42 @@ public sealed class UploadPlanTests
         Assert.True(UploadPlan.Create(Ticket(Src("a.p")), environment, "pilot").IsProduction);
     }
 
+    [Fact]
+    public void A_per_prefix_path_sends_each_program_to_its_own_directory()
+    {
+        // One site keeps every SRC program in one directory; another splits them
+        // by the program's two-character prefix. The placeholder covers both.
+        var environment = Environment(src: "/appl/mfg/src/us/{prefix}");
+
+        var plan = UploadPlan.Create(
+            Ticket(Src("xxfoo.p"), Src("sfbar.p")), environment, "pilot");
+
+        Assert.Equal("/appl/mfg/src/us/xx/xxfoo.p", plan.Uploads[0].RemotePath);
+        Assert.Equal("/appl/mfg/src/us/sf/sfbar.p", plan.Uploads[1].RemotePath);
+    }
+
+    [Fact]
+    public void A_program_with_no_prefix_is_refused_when_the_path_needs_one()
+    {
+        // Not a skip: this is an upload, and a file with nowhere to go must stop
+        // the run rather than quietly not be deployed.
+        var environment = Environment(src: "/appl/mfg/src/us/{prefix}");
+
+        var message = Assert.Throws<ConfigurationException>(
+            () => UploadPlan.Create(Ticket(Src("x.p")), environment, "pilot")).Message;
+
+        Assert.Contains("x.p", message, StringComparison.Ordinal);
+        Assert.Contains("srcRemotePath", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_path_without_the_placeholder_is_used_as_it_stands()
+    {
+        // The other site's layout, and the reason a short name is only a problem
+        // when the path actually needs a prefix.
+        Assert.Equal($"{SrcPath}/x.p", Assert.Single(Plan(Src("x.p")).Uploads).RemotePath);
+    }
+
     // --- helpers ---------------------------------------------------------
 
     private static ProgramFile Src(string name) => new(ProgramKind.Src, @"C:\tickets\T1\SRC\" + name);

@@ -278,35 +278,15 @@ public sealed class ConfigurationResolver
             return null;
         }
 
-        var editorCommand = Trimmed(qrf.EditorCommand);
-
-        if (editorCommand is null)
+        if (!ExactlyOne(qrf.Editor, qrf.Shell, "compile.qrf", "editor, shell", label, errors))
         {
-            errors.Add($"{label}: 'compile.qrf' needs an 'editorCommand'.");
             return null;
         }
 
-        var statement = Trimmed(qrf.Statement) ?? QrfCompileSettings.DefaultStatementTemplate;
+        var editor = ResolveEditorCompile(qrf.Editor, label, errors);
+        var shell = ResolveShellCompile(qrf.Shell, "compile.qrf.shell", label, errors);
 
-        if (!statement.Contains("{remoteFile}", StringComparison.Ordinal))
-        {
-            errors.Add(
-                $"{label}: 'compile.qrf.statement' must contain '{{remoteFile}}', " +
-                "otherwise every report would compile the same file.");
-            return null;
-        }
-
-        // A Progress statement without its full stop is not a syntax error the
-        // operator would ever see: the editor simply holds an unterminated line
-        // and F1 compiles nothing, which looks exactly like a compile that ran
-        // and changed nothing.
-        if (!statement.EndsWith('.'))
-        {
-            errors.Add($"{label}: 'compile.qrf.statement' must end with '.' - it is a Progress statement.");
-            return null;
-        }
-
-        return new QrfCompileSettings(editorCommand, statement);
+        return editor is null && shell is null ? null : new QrfCompileSettings(editor, shell);
     }
 
     private static SrcCompileSettings? ResolveSrcCompile(
@@ -319,47 +299,176 @@ public sealed class ConfigurationResolver
             return null;
         }
 
-        var manifestPath = Trimmed(src.ManifestPath);
-        var workingDirectory = Trimmed(src.WorkingDirectory);
-        var command = Trimmed(src.Command);
+        if (!ExactlyOne(src.Manifest, src.Shell, "compile.src", "manifest, shell", label, errors))
+        {
+            return null;
+        }
 
-        var languages = src.Languages?
+        var manifest = ResolveManifestCompile(src.Manifest, label, errors);
+        var shell = ResolveShellCompile(src.Shell, "compile.src.shell", label, errors);
+
+        return manifest is null && shell is null ? null : new SrcCompileSettings(manifest, shell);
+    }
+
+    /// <summary>
+    /// Checks a kind names one procedure and not two.
+    /// </summary>
+    /// <remarks>
+    /// Both would be ambiguous and neither is an empty block that reads as
+    /// configured. Either way the operator believes something will be compiled
+    /// that will not be.
+    /// </remarks>
+    private static bool ExactlyOne(
+        object? first, object? second, string block, string options, string label, List<string> errors)
+    {
+        var count = (first is null ? 0 : 1) + (second is null ? 0 : 1);
+
+        if (count == 1)
+        {
+            return true;
+        }
+
+        errors.Add(count == 0
+            ? $"{label}: '{block}' must name a procedure - one of: {options}."
+            : $"{label}: '{block}' names more than one procedure. Keep one of: {options}.");
+
+        return false;
+    }
+
+    private static EditorCompileSettings? ResolveEditorCompile(
+        EditorCompileSection? editor,
+        string label,
+        List<string> errors)
+    {
+        if (editor is null)
+        {
+            return null;
+        }
+
+        var editorCommand = Trimmed(editor.EditorCommand);
+
+        if (editorCommand is null)
+        {
+            errors.Add($"{label}: 'compile.qrf.editor' needs an 'editorCommand'.");
+            return null;
+        }
+
+        var statement = Trimmed(editor.Statement) ?? EditorCompileSettings.DefaultStatementTemplate;
+
+        if (!statement.Contains("{remoteFile}", StringComparison.Ordinal))
+        {
+            errors.Add(
+                $"{label}: 'compile.qrf.editor.statement' must contain '{{remoteFile}}', " +
+                "otherwise every report would compile the same file.");
+            return null;
+        }
+
+        // A Progress statement without its full stop is not a syntax error the
+        // operator would ever see: the editor simply holds an unterminated line
+        // and F1 compiles nothing, which looks exactly like a compile that ran
+        // and changed nothing.
+        if (!statement.EndsWith('.'))
+        {
+            errors.Add(
+                $"{label}: 'compile.qrf.editor.statement' must end with '.' - it is a Progress statement.");
+            return null;
+        }
+
+        return new EditorCompileSettings(editorCommand, statement);
+    }
+
+    private static ManifestCompileSettings? ResolveManifestCompile(
+        ManifestCompileSection? manifest,
+        string label,
+        List<string> errors)
+    {
+        if (manifest is null)
+        {
+            return null;
+        }
+
+        const string block = "compile.src.manifest";
+
+        var manifestPath = Trimmed(manifest.ManifestPath);
+        var workingDirectory = Trimmed(manifest.WorkingDirectory);
+        var command = Trimmed(manifest.Command);
+
+        var languages = manifest.Languages?
             .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
             .ToDictionary(pair => pair.Key.Trim(), pair => pair.Value.Trim(), StringComparer.Ordinal)
             ?? [];
 
         if (manifestPath is null)
         {
-            errors.Add($"{label}: 'compile.src' needs a 'manifestPath'.");
+            errors.Add($"{label}: '{block}' needs a 'manifestPath'.");
         }
 
         if (workingDirectory is null)
         {
-            errors.Add($"{label}: 'compile.src' needs a 'workingDirectory' for the compile script.");
+            errors.Add($"{label}: '{block}' needs a 'workingDirectory' for the compile script.");
         }
 
         if (command is null)
         {
-            errors.Add($"{label}: 'compile.src' needs a 'command', e.g. './compile {{language}} test'.");
+            errors.Add($"{label}: '{block}' needs a 'command', e.g. './compile {{language}} test'.");
         }
         else if (!command.Contains("{language}", StringComparison.Ordinal))
         {
             // Without the placeholder the same language would be compiled once
             // per entry, and the other language's .r would never move - which
             // the verification would correctly, but confusingly, call a failure.
-            errors.Add($"{label}: 'compile.src.command' must contain '{{language}}'.");
+            errors.Add($"{label}: '{block}.command' must contain '{{language}}'.");
         }
 
         if (languages.Count == 0)
         {
             errors.Add(
-                $"{label}: 'compile.src' needs at least one entry in 'languages', " +
+                $"{label}: '{block}' needs at least one entry in 'languages', " +
                 "mapping a language code to the directory its compiled output lands under.");
         }
 
         return manifestPath is null || workingDirectory is null || command is null || languages.Count == 0
             ? null
-            : new SrcCompileSettings(manifestPath, workingDirectory, command, languages);
+            : new ManifestCompileSettings(manifestPath, workingDirectory, command, languages);
+    }
+
+    private static ShellCompileSettings? ResolveShellCompile(
+        ShellCompileSection? shell,
+        string block,
+        string label,
+        List<string> errors)
+    {
+        if (shell is null)
+        {
+            return null;
+        }
+
+        var workingDirectory = Trimmed(shell.WorkingDirectory);
+        var command = Trimmed(shell.Command);
+
+        if (workingDirectory is null)
+        {
+            errors.Add($"{label}: '{block}' needs a 'workingDirectory'.");
+        }
+
+        if (command is null)
+        {
+            errors.Add($"{label}: '{block}' needs a 'command'.");
+        }
+
+        var resultPath = Trimmed(shell.ResultPath);
+
+        if (resultPath is not null && !resultPath.Contains("{name}", StringComparison.Ordinal))
+        {
+            // Without it every program would be checked against one path, so a
+            // single stale file would report the whole ticket as failed.
+            errors.Add($"{label}: '{block}.resultPath' must contain '{{name}}'.");
+            return null;
+        }
+
+        return workingDirectory is null || command is null
+            ? null
+            : new ShellCompileSettings(workingDirectory, command, resultPath);
     }
 
     private static string? Trimmed(string? value) =>

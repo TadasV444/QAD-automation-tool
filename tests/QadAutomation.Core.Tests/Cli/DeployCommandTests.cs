@@ -43,7 +43,7 @@ public sealed class DeployCommandTests : IDisposable
                   "host": "qad.example", "username": "mfg", "password": "hunter2",
                   "srcRemotePath": "{{SrcPath}}",
                   "qrfRemotePath": "{{QrfPath}}",
-                  "compile": { "qrf": { "editorCommand": "{{QrfPath}}/compile_editor us test" } }
+                  "compile": { "qrf": { "editor": { "editorCommand": "{{QrfPath}}/compile_editor us test" } } }
                 },
                 "environments": [ { "name": "TEST" }, { "name": "PROD" } ]
               }]

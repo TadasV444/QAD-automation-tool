@@ -102,7 +102,7 @@ public sealed record UploadPlan(
         var uploads = ticket.Files
             .Select(file => new PlannedUpload(
                 file,
-                environment.Paths.Require(file.Kind, clientId, environment.Name)))
+                environment.Paths.Require(file, clientId, environment.Name)))
             .ToList();
 
         return new UploadPlan(clientId, ticket.Name, ticket.Path, environment, uploads);

@@ -206,7 +206,7 @@ public sealed class ConfigurationResolverTests
     public void A_qrf_recipe_needs_an_editor_command()
     {
         var file = FileWith(client => client.Defaults!.Compile =
-            new CompileSection { Qrf = new QrfCompileSection { Statement = "compile {remoteFile}." } });
+            new CompileSection { Qrf = new QrfCompileSection { Editor = new EditorCompileSection { Statement = "compile {remoteFile}." } } });
 
         Assert.Contains("'editorCommand'", ResolveError(file));
     }
@@ -220,7 +220,7 @@ public sealed class ConfigurationResolverTests
 
         Assert.Equal(
             "compile /qad/qrf/rep.p save into /qad/qrf.",
-            qrf!.StatementFor("/qad/qrf/rep.p", "/qad/qrf"));
+            qrf!.Editor!.StatementFor("/qad/qrf/rep.p", "/qad/qrf"));
     }
 
     [Fact]
@@ -230,11 +230,7 @@ public sealed class ConfigurationResolverTests
         // same file, and the .r check would pass for each of them.
         var file = FileWith(client => client.Defaults!.Compile = new CompileSection
         {
-            Qrf = new QrfCompileSection
-            {
-                EditorCommand = "compile_editor us devl",
-                Statement = "compile /qad/qrf/fixed.p save into /qad/qrf."
-            }
+            Qrf = new QrfCompileSection { Editor = new EditorCompileSection { EditorCommand = "compile_editor us devl", Statement = "compile /qad/qrf/fixed.p save into /qad/qrf." } }
         });
 
         Assert.Contains("{remoteFile}", ResolveError(file));
@@ -247,11 +243,7 @@ public sealed class ConfigurationResolverTests
         // compiles nothing, and it looks exactly like a compile that ran.
         var file = FileWith(client => client.Defaults!.Compile = new CompileSection
         {
-            Qrf = new QrfCompileSection
-            {
-                EditorCommand = "compile_editor us devl",
-                Statement = "compile {remoteFile} save into {remoteDirectory}"
-            }
+            Qrf = new QrfCompileSection { Editor = new EditorCompileSection { EditorCommand = "compile_editor us devl", Statement = "compile {remoteFile} save into {remoteDirectory}" } }
         });
 
         Assert.Contains("must end with '.'", ResolveError(file));
@@ -261,7 +253,7 @@ public sealed class ConfigurationResolverTests
     public void A_src_recipe_needs_a_manifest_a_directory_a_command_and_languages()
     {
         var file = FileWith(client => client.Defaults!.Compile =
-            new CompileSection { Src = new SrcCompileSection() });
+            new CompileSection { Src = new SrcCompileSection { Manifest = new ManifestCompileSection() } });
 
         var message = ResolveError(file);
 
@@ -281,10 +273,13 @@ public sealed class ConfigurationResolverTests
         {
             Src = new SrcCompileSection
             {
-                ManifestPath = "/qad/global/utcompil.wrk",
-                WorkingDirectory = "/qad/global",
-                Command = "./compile us devl",
-                Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+                Manifest = new ManifestCompileSection
+                {
+                    ManifestPath = "/qad/global/utcompil.wrk",
+                    WorkingDirectory = "/qad/global",
+                    Command = "./compile us devl",
+                    Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+                }
             }
         });
 
@@ -298,18 +293,21 @@ public sealed class ConfigurationResolverTests
         {
             Src = new SrcCompileSection
             {
-                ManifestPath = "/qad/global/utcompil.wrk",
-                WorkingDirectory = "/qad/global",
-                Command = "./compile {language} devl",
-                Languages = new Dictionary<string, string>
+                Manifest = new ManifestCompileSection
                 {
-                    ["lt"] = "/qad/global/lt",
-                    ["us"] = "/qad/global/us"
+                    ManifestPath = "/qad/global/utcompil.wrk",
+                    WorkingDirectory = "/qad/global",
+                    Command = "./compile {language} devl",
+                    Languages = new Dictionary<string, string>
+                    {
+                        ["lt"] = "/qad/global/lt",
+                        ["us"] = "/qad/global/us"
+                    }
                 }
             }
         });
 
-        var src = Resolve(file).Clients[0].Environments[0].Compile.Src!;
+        var src = Resolve(file).Clients[0].Environments[0].Compile.Src!.Manifest!;
 
         Assert.Equal("./compile lt devl", src.CommandFor("lt"));
         Assert.Equal("/qad/global/us", src.Languages["us"]);
@@ -327,10 +325,13 @@ public sealed class ConfigurationResolverTests
                 {
                     Src = new SrcCompileSection
                     {
-                        ManifestPath = "/qad/global/utcompil.wrk",
-                        WorkingDirectory = "/qad/global",
-                        Command = "./compile {language} prod",
-                        Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+                        Manifest = new ManifestCompileSection
+                        {
+                            ManifestPath = "/qad/global/utcompil.wrk",
+                            WorkingDirectory = "/qad/global",
+                            Command = "./compile {language} prod",
+                            Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+                        }
                     }
                 }
             }
@@ -418,7 +419,7 @@ public sealed class ConfigurationResolverTests
                 QrfRemotePath = "/qad/qrf",
                 Compile = new CompileSection
                 {
-                    Qrf = new QrfCompileSection { EditorCommand = "/qad/qrf/compile_editor us devl" }
+                    Qrf = new QrfCompileSection { Editor = new EditorCompileSection { EditorCommand = "/qad/qrf/compile_editor us devl" } }
                 }
             },
             Environments = [new EnvironmentSection { Name = "DEVL" }]

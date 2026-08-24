@@ -5,22 +5,21 @@ namespace QadAutomation.Core.Configuration;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This replaced a single <c>strategy</c> plus a flat list of command strings.
-/// That shape was written before either procedure had been observed, and it
-/// could not express either of them: QRF is one interactive editor session per
-/// file, SRC is a remote manifest file followed by a batch script run once for
-/// the whole set. They share a server and nothing else.
-/// </para>
-/// <para>
-/// So there is no strategy discriminator any more. The two recipes have
-/// different shapes, and the shape is the discriminator - a config that names
-/// <c>qrf</c> cannot accidentally be read as an SRC recipe, which a mistyped
-/// enum value could have allowed.
-/// </para>
-/// <para>
 /// Both halves are optional. An environment with no <c>src</c> block simply
-/// cannot compile SRC yet, and says so when asked; requiring a recipe that has
-/// never been run against a real server would only invite an invented one.
+/// cannot compile SRC, and says so when asked; requiring a recipe that has never
+/// been run against a real server would only invite an invented one.
+/// </para>
+/// <para>
+/// Each half then names <b>which</b> procedure the site uses. Two clients have
+/// needed four between them - a Progress editor driven by function keys, a
+/// manifest file plus a per-language script, and a plain shell command for
+/// either kind - and there is no reason to expect the fourth to be the last.
+/// </para>
+/// <para>
+/// There is still no strategy enum. Naming the procedure and supplying its
+/// settings are one act here: you cannot write <c>"editor"</c> and then fill in
+/// a shell command's fields, which a discriminator plus a flat field list would
+/// have allowed.
 /// </para>
 /// </remarks>
 /// <param name="Qrf">Recipe for QRF reports, or <c>null</c> if not configured.</param>
@@ -32,7 +31,21 @@ public sealed record CompileSettings(QrfCompileSettings? Qrf, SrcCompileSettings
 }
 
 /// <summary>
-/// Compiling one QRF report through the Progress procedure editor.
+/// How this site compiles QRF reports. Exactly one procedure is set.
+/// </summary>
+public sealed record QrfCompileSettings(
+    EditorCompileSettings? Editor,
+    ShellCompileSettings? Shell);
+
+/// <summary>
+/// How this site compiles SRC programs. Exactly one procedure is set.
+/// </summary>
+public sealed record SrcCompileSettings(
+    ManifestCompileSettings? Manifest,
+    ShellCompileSettings? Shell);
+
+/// <summary>
+/// Compiling one report at a time through the Progress procedure editor.
 /// </summary>
 /// <remarks>
 /// The manual procedure, which this mirrors exactly: run the editor, press F4,
@@ -44,15 +57,15 @@ public sealed record CompileSettings(QrfCompileSettings? Qrf, SrcCompileSettings
 /// <param name="EditorCommand">
 /// The full command that opens the editor, e.g.
 /// <c>/appl/.../reports/compile_editor us test</c>. Held whole rather than
-/// assembled from parts because the second argument names the environment and it
-/// is not yet established whether the binary's own path follows it. Config can
-/// be corrected without a rebuild; a wrong guess in code cannot.
+/// assembled from parts because its trailing argument names the environment and
+/// the binary's own path may too. Config can be corrected without a rebuild; a
+/// wrong guess in code cannot.
 /// </param>
 /// <param name="StatementTemplate">
 /// The Progress statement to type, with <c>{remoteFile}</c> and
 /// <c>{remoteDirectory}</c> substituted per file.
 /// </param>
-public sealed record QrfCompileSettings(string EditorCommand, string StatementTemplate)
+public sealed record EditorCompileSettings(string EditorCommand, string StatementTemplate)
 {
     /// <summary>What every site observed so far types.</summary>
     public const string DefaultStatementTemplate = "compile {remoteFile} save into {remoteDirectory}.";
@@ -65,22 +78,20 @@ public sealed record QrfCompileSettings(string EditorCommand, string StatementTe
 }
 
 /// <summary>
-/// Compiling SRC programs through the batch compile script.
+/// Compiling a whole batch listed in a manifest file, once per language.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing like the QRF procedure. The programs to build are listed in a file on
-/// the server, and then one command per user language compiles the whole list -
-/// so this is per-batch where QRF is per-file, and it has a step, writing the
-/// manifest, that QRF has no equivalent of.
-/// </para>
-/// <para>
-/// A single SRC program produces <b>two</b> compiled results, one per language,
+/// A single program compiled this way produces <b>one result per language</b>,
 /// in different directory trees. That is why the languages are a map rather than
 /// a list of command strings: each entry supplies both the command to run and
-/// the place to check afterwards, so the two cannot drift apart. Kept as two
-/// separate settings they could, and the failure mode would be a compile
-/// reported against a directory nothing writes to.
+/// the place to check afterwards, so the two cannot drift apart. Kept as separate
+/// settings they could, and the failure mode would be a compile reported against
+/// a directory nothing ever writes to.
+/// </para>
+/// <para>
+/// The script is not fire-and-forget - it raises a warning dialog and blocks on
+/// <c>&lt;OK&gt;</c>, so the compiler sends Enter after each command.
 /// </para>
 /// </remarks>
 /// <param name="ManifestPath">
@@ -93,14 +104,14 @@ public sealed record QrfCompileSettings(string EditorCommand, string StatementTe
 /// Run once per language with <c>{language}</c> substituted, e.g.
 /// <c>./compile {language} test</c>. The environment is part of the template
 /// rather than a separate field because it is the script's own argument and its
-/// spelling (<c>test</c>, <c>euro</c>) is the site's, not this tool's.
+/// spelling is the site's, not this tool's.
 /// </param>
 /// <param name="Languages">
 /// Language code to the root directory its compiled output lands under. The
 /// results themselves sit one level deeper, in a folder named after the
 /// program's prefix.
 /// </param>
-public sealed record SrcCompileSettings(
+public sealed record ManifestCompileSettings(
     string ManifestPath,
     string WorkingDirectory,
     string CommandTemplate,
@@ -109,4 +120,46 @@ public sealed record SrcCompileSettings(
     /// <summary>The command to run for one language.</summary>
     public string CommandFor(string language) =>
         CommandTemplate.Replace("{language}", language, StringComparison.Ordinal);
+}
+
+/// <summary>
+/// Compiling by running one ordinary shell command.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The simplest of the procedures and the only one that works for either kind:
+/// the site provides a build script that finds the changed programs itself, so
+/// nothing needs listing, typing or per-file substitution.
+/// </para>
+/// <para>
+/// It is also the only one that can be verified by an <b>exit code</b> rather
+/// than by inspecting what it wrote, since a plain command has one to report.
+/// Whether a given script sets it meaningfully is a property of that script, so
+/// <see cref="ResultPath"/> exists for the case where it does not.
+/// </para>
+/// </remarks>
+/// <param name="WorkingDirectory">Directory the command is run from.</param>
+/// <param name="Command">The command, run exactly as written.</param>
+/// <param name="ResultPath">
+/// Optional. Where this command writes each program's compiled output, with
+/// <c>{prefix}</c> and <c>{name}</c> substituted per file. When set, the
+/// timestamps there decide the verdict and the exit code is only reported;
+/// when absent, the exit code alone decides.
+/// </param>
+public sealed record ShellCompileSettings(
+    string WorkingDirectory,
+    string Command,
+    string? ResultPath)
+{
+    /// <summary>Where <paramref name="fileName"/>'s compiled output should appear.</summary>
+    public string? ResultFor(string fileName, string prefix) =>
+        ResultPath?
+            .Replace("{prefix}", prefix, StringComparison.Ordinal)
+            .Replace("{name}", NameWithoutExtension(fileName), StringComparison.Ordinal);
+
+    private static string NameWithoutExtension(string fileName)
+    {
+        var dot = fileName.LastIndexOf('.');
+        return dot > 0 ? fileName[..dot] : fileName;
+    }
 }

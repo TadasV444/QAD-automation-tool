@@ -81,8 +81,22 @@ public sealed class CompileSection
     public SrcCompileSection? Src { get; set; }
 }
 
-/// <summary>The <c>compile.qrf</c> block.</summary>
+/// <summary>The <c>compile.qrf</c> block. Exactly one procedure is expected.</summary>
 public sealed class QrfCompileSection
+{
+    public EditorCompileSection? Editor { get; set; }
+    public ShellCompileSection? Shell { get; set; }
+}
+
+/// <summary>The <c>compile.src</c> block. Exactly one procedure is expected.</summary>
+public sealed class SrcCompileSection
+{
+    public ManifestCompileSection? Manifest { get; set; }
+    public ShellCompileSection? Shell { get; set; }
+}
+
+/// <summary>Driving the Progress procedure editor.</summary>
+public sealed class EditorCompileSection
 {
     public string? EditorCommand { get; set; }
 
@@ -90,8 +104,8 @@ public sealed class QrfCompileSection
     public string? Statement { get; set; }
 }
 
-/// <summary>The <c>compile.src</c> block.</summary>
-public sealed class SrcCompileSection
+/// <summary>A manifest file plus one script run per language.</summary>
+public sealed class ManifestCompileSection
 {
     public string? ManifestPath { get; set; }
     public string? WorkingDirectory { get; set; }
@@ -101,4 +115,17 @@ public sealed class SrcCompileSection
 
     /// <summary>Language code to the root its compiled output lands under.</summary>
     public Dictionary<string, string>? Languages { get; set; }
+}
+
+/// <summary>One ordinary shell command.</summary>
+public sealed class ShellCompileSection
+{
+    public string? WorkingDirectory { get; set; }
+    public string? Command { get; set; }
+
+    /// <summary>
+    /// Optional. Where the command writes compiled output, with <c>{prefix}</c>
+    /// and <c>{name}</c> substituted. Without it the exit code alone decides.
+    /// </summary>
+    public string? ResultPath { get; set; }
 }
