@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using QadAutomation.Core.Compile;
 using QadAutomation.Core.Configuration;
 using QadAutomation.Core.Tests.Transfer;
@@ -30,6 +31,7 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
     private readonly List<string> _sent = [];
     private int _goCount;
     private bool _awaitingExitCode;
+    private string _lastCommand = string.Empty;
 
     /// <summary>Everything sent, in order, including the key sequences.</summary>
     public IReadOnlyList<string> Sent => _sent;
@@ -91,7 +93,7 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
         if (text.Contains(ShellProtocol.ExitMarker, StringComparison.Ordinal))
         {
             _awaitingExitCode = true;
-            return;
+            _lastCommand = text.Split(';')[0];
         }
 
         if (!IsCompileTrigger(text))
@@ -124,7 +126,23 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
     private static bool IsCompileTrigger(string text) =>
         text == ProgressKeys.Go || text.StartsWith("./", StringComparison.Ordinal);
 
-    public string ReadUntilIdle(TimeSpan idleFor, TimeSpan timeout)
+    /// <summary>
+    /// What a real terminal returns for a command run with a status echo.
+    /// </summary>
+    /// <remarks>
+    /// Includes the echoed command line, so the marker appears twice - once
+    /// followed by a literal <c>$?</c> and once by the number. A compiler that
+    /// matched the marker alone would read the first and report a result for a
+    /// command that had not run.
+    /// </remarks>
+    private string ExitCodeTranscript() =>
+        ExitCode is { } code
+            ? $"{ShellProtocol.WithExitCode(_lastCommand)}\n{Screen}{ShellProtocol.ExitMarker}{code}\n"
+            : $"{ShellProtocol.WithExitCode(_lastCommand)}\n{Screen}";
+
+    public string ReadUntilIdle(TimeSpan idleFor, TimeSpan timeout) => Screen;
+
+    public string ReadUntil(Regex marker, TimeSpan timeout)
     {
         if (!_awaitingExitCode)
         {
@@ -133,12 +151,7 @@ internal sealed class FakeSshShell : ISshShellFactory, ISshShell
 
         _awaitingExitCode = false;
 
-        // Both occurrences a real shell produces: the echoed command line, then
-        // its output. A compiler that read the first would report '$?' as the
-        // status of every run.
-        return ExitCode is { } code
-            ? $"echo {ShellProtocol.ExitMarker}$?\n{ShellProtocol.ExitMarker}{code}\n"
-            : $"echo {ShellProtocol.ExitMarker}$?\n";
+        return ExitCodeTranscript();
     }
 
     public void Dispose() => IsDisposed = true;

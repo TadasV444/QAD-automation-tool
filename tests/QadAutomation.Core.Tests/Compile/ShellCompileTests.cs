@@ -61,6 +61,25 @@ public sealed class ShellCompileTests
     }
 
     [Fact]
+    public void Completion_is_the_echoed_status_and_not_a_pause_in_the_output()
+    {
+        // The first real run's bug. A build that goes quiet mid-compile looked
+        // finished, the status echo was typed into a program still running, no
+        // code came back, and a working compile was reported as broken. So the
+        // command and its echo go out as ONE line, and the wait ends on the
+        // marker rather than on silence.
+        Uploaded("/appl/mfg/src/us/xx/xxfoo.p");
+        _shell.ExitCode = 0;
+
+        Compile(Src("xxfoo.p"));
+
+        var command = Assert.Single(
+            _shell.Sent.Where(t => t.Contains("./build customizations", StringComparison.Ordinal)));
+
+        Assert.Contains(ShellProtocol.ExitMarker, command, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_shell_that_reports_no_exit_code_at_all_is_a_failure()
     {
         // The marker never came back, so nothing is known. Treating silence as

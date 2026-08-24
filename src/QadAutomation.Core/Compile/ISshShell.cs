@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using QadAutomation.Core.Configuration;
 
 namespace QadAutomation.Core.Compile;
@@ -38,8 +39,36 @@ public interface ISshShell : IDisposable
     /// Reads until nothing has arrived for <paramref name="idleFor"/>, or
     /// <paramref name="timeout"/> elapses overall.
     /// </summary>
+    /// <remarks>
+    /// For the Progress editor, which draws a screen and then waits: silence is
+    /// the only signal it gives. Do not use it to wait for a <i>command</i> to
+    /// finish - see <see cref="ReadUntil"/> for why.
+    /// </remarks>
     /// <returns>Everything received during the wait, escape sequences included.</returns>
     string ReadUntilIdle(TimeSpan idleFor, TimeSpan timeout);
+
+    /// <summary>
+    /// Reads until <paramref name="marker"/> matches what has arrived so far, or
+    /// <paramref name="timeout"/> elapses.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The right way to wait for a command. Treating a pause as completion is
+    /// wrong for anything that does real work: a build that stops printing for
+    /// three seconds mid-compile looks finished, and whatever is sent next
+    /// arrives as input to a program still running.
+    /// </para>
+    /// <para>
+    /// That is not hypothetical - it is exactly how the first real run against
+    /// a build script failed, and it failed in the direction of reporting a
+    /// working compile as broken.
+    /// </para>
+    /// </remarks>
+    /// <returns>
+    /// Everything received, including the marker. On timeout, whatever arrived -
+    /// so the caller can show it rather than only reporting that time ran out.
+    /// </returns>
+    string ReadUntil(Regex marker, TimeSpan timeout);
 }
 
 /// <summary>Opens <see cref="ISshShell"/>s.</summary>
@@ -71,8 +100,28 @@ public static class ShellProtocol
     /// <summary>Prefixes the echoed exit code.</summary>
     public const string ExitMarker = "__QAD_EXIT__";
 
-    /// <summary>The command that echoes the previous command's status.</summary>
-    public static string EchoExitCode => $"echo {ExitMarker}$?";
+    /// <summary>
+    /// Runs <paramref name="command"/> and then reports its status, as one line.
+    /// </summary>
+    /// <remarks>
+    /// One line, not two, because the marker is also how the tool knows the
+    /// command has finished. Sent separately, the second line would have to be
+    /// typed while the first might still be running.
+    /// </remarks>
+    public static string WithExitCode(string command) => $"{command}; echo {ExitMarker}$?";
+
+    /// <summary>
+    /// Matches the echoed status, and only that.
+    /// </summary>
+    /// <remarks>
+    /// The digit is what matters. A terminal echoes the command line back
+    /// before running it, so the marker appears twice - once followed by a
+    /// literal <c>$?</c>, and once by the number. Waiting on the marker alone
+    /// would stop at the echo and read a result for a command that had not yet
+    /// started.
+    /// </remarks>
+    public static readonly Regex CompletedExitCode =
+        new(ExitMarker + @"(\d+)", RegexOptions.Compiled);
 }
 
 /// <summary>
