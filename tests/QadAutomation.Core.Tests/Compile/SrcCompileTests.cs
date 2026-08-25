@@ -252,12 +252,17 @@ public sealed class SrcCompileTests
             new CompileSettings(
                 qrf is null
                     ? null
-                    : new QrfCompileSettings(new EditorCompileSettings("compile_editor us test", EditorCompileSettings.DefaultStatementTemplate), null),
+                    : new QrfCompileSettings(new EditorCompileSettings("compile_editor us test", null, [], EditorCompileSettings.DefaultSteps, false, EditorCompileSettings.DefaultStatementTemplate), null),
                 new SrcCompileSettings(
                     new ManifestCompileSettings(
-                        Manifest,
                         "/appl/global",
                         "./compile {language} test",
-                        new Dictionary<string, string> { ["lt"] = LtRoot, ["us"] = UsRoot }),
+                        new Dictionary<string, LanguageTarget>
+                        {
+                            // One manifest shared by both languages - this
+                            // site's layout. The other keeps one per language.
+                            ["lt"] = new(Manifest, LtRoot),
+                            ["us"] = new(Manifest, UsRoot)
+                        }),
                     null)));
 }

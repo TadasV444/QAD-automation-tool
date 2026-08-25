@@ -101,10 +101,26 @@ public sealed class SrcCompileSection
     public ShellCompileSection? Shell { get; set; }
 }
 
-/// <summary>Driving the Progress procedure editor.</summary>
+/// <summary>Driving an interactive editor wrapper.</summary>
 public sealed class EditorCompileSection
 {
+    /// <summary>With <c>{language}</c> substituted where the wrapper takes one.</summary>
     public string? EditorCommand { get; set; }
+
+    /// <summary>Optional; omit where the command is an absolute path.</summary>
+    public string? WorkingDirectory { get; set; }
+
+    /// <summary>Optional; omit where the wrapper is language-neutral.</summary>
+    public List<string>? Languages { get; set; }
+
+    /// <summary>
+    /// Optional. Named steps - Statement, Enter, Go, NewBuffer - in the order
+    /// they are sent per program. Defaults to NewBuffer, Statement, Go.
+    /// </summary>
+    public List<string>? Steps { get; set; }
+
+    /// <summary>Optional; true where the editor cannot take a second program.</summary>
+    public bool? RestartPerFile { get; set; }
 
     /// <summary>Optional; defaults to the standard Progress compile statement.</summary>
     public string? Statement { get; set; }
@@ -113,14 +129,22 @@ public sealed class EditorCompileSection
 /// <summary>A manifest file plus one script run per language.</summary>
 public sealed class ManifestCompileSection
 {
-    public string? ManifestPath { get; set; }
     public string? WorkingDirectory { get; set; }
 
     /// <summary>Run once per language, with <c>{language}</c> substituted.</summary>
     public string? Command { get; set; }
 
-    /// <summary>Language code to the root its compiled output lands under.</summary>
-    public Dictionary<string, string>? Languages { get; set; }
+    /// <summary>Language code to where that language reads and writes.</summary>
+    public Dictionary<string, LanguageTargetSection>? Languages { get; set; }
+}
+
+/// <summary>One entry in <c>compile.src.manifest.languages</c>.</summary>
+public sealed class LanguageTargetSection
+{
+    public string? ManifestPath { get; set; }
+
+    /// <summary>Root the compiled output lands under, above the prefix folder.</summary>
+    public string? ResultPath { get; set; }
 }
 
 /// <summary>One ordinary shell command.</summary>

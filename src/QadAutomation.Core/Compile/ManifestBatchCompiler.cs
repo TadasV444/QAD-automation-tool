@@ -109,8 +109,15 @@ internal sealed class ManifestBatchCompiler
         // trailing newline included so the last entry is a complete line.
         var manifest = string.Concat(planned.Select(compile => compile.File.FileName + "\n"));
 
-        report($"Writing {planned.Count} program name(s) to {recipe.ManifestPath}");
-        session.WriteText(recipe.ManifestPath, manifest);
+        // One site shares a single manifest between both languages; another
+        // keeps one per language. The same list goes to each, so both are the
+        // same act - which is why the paths are deduplicated rather than the
+        // languages iterated.
+        foreach (var path in recipe.ManifestPaths)
+        {
+            report($"Writing {planned.Count} program name(s) to {path}");
+            session.WriteText(path, manifest);
+        }
 
         using var shell = _shells.Open(endpoint);
 

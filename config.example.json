@@ -78,17 +78,40 @@
         // QRF can use 'editor' or 'shell'; SRC can use 'manifest' or 'shell'.
         "compile": {
 
-          // One editor session per report: F4, type the statement, F1. Then the
-          // .r timestamp is checked to see whether it actually built.
+          // An interactive editor, driven by keystrokes. The .r timestamp is
+          // then checked to see whether it actually built.
           "qrf": {
             "editor": {
-              // The whole command, because its trailing argument names the
-              // environment and the binary's own path may too.
+              // The whole command, because its arguments are the site's. Use
+              // {language} where the wrapper takes one.
               "editorCommand": "/qad/live/qrf/compile_editor us live",
+
+              // Optional. Omit where the command is an absolute path, as here.
+              // "workingDirectory": "/qad/live/qrf",
+
+              // Optional. Where the wrapper is opened once per language.
+              // "languages": ["lt", "us"],
+
+              // Optional. What to send per program, in order. Defaults to
+              // exactly the line below - F4 clears the buffer, the text is
+              // typed, Return commits it, F1 runs it.
+              //
+              // These belong to the client's wrapper script, not to Progress:
+              // another site's is entered with Enter and run with F1 twice, as
+              //   ["Enter", "Statement", "Go", "Go"]
+              // Named steps only - Statement, Enter, Go (F1), NewBuffer (F4) -
+              // so nobody has to write escape sequences into JSON.
+              "steps": ["NewBuffer", "Statement", "Enter", "Go"],
+
+              // Optional. True where the wrapper takes one program per run and
+              // must be reopened for the next. Defaults to false.
+              // "restartPerFile": true,
 
               // Optional. Defaults to exactly this. Placeholders:
               //   {remoteFile}       the uploaded .p, full remote path
               //   {remoteDirectory}  where the .r should land
+              //
+              // Some wrappers want a bare path instead - "{remoteFile}".
               "statement": "compile {remoteFile} save into {remoteDirectory}."
             }
           },
@@ -96,23 +119,31 @@
           // Write the manifest, then run the compile script once per language.
           "src": {
             "manifest": {
-              // Overwritten each run with one bare filename per line. A fixed
-              // shared path - two people compiling at once would clash.
-              "manifestPath": "/qad/global/utcompil.wrk",
               "workingDirectory": "/qad/global",
 
-              // Run once per language below. The environment is part of the
-              // command because it is the script's own argument.
+              // Run once per language below. The environment, where the script
+              // takes one, is part of the command - it is the script's own
+              // argument.
               "command": "./compile {language} live",
 
-              // Where each language's compiled output lands. The .r files sit
-              // one level deeper, in a folder named after the program's first
-              // two letters - so xxfoo.p becomes /qad/global/lt/xx/xxfoo.r and
+              // Per language: the list of programs it compiles, and the root
+              // its output lands under. The compiled files sit one level
+              // deeper, in a folder named after the program's first two
+              // letters - so xxfoo.p becomes /qad/global/lt/xx/xxfoo.r and
               // /qad/global/us/xx/xxfoo.r, and BOTH must build for the program
               // to count as compiled.
+              //
+              // Point both languages at the same manifestPath where the site
+              // shares one file; it is then written once.
               "languages": {
-                "lt": "/qad/global/lt",
-                "us": "/qad/global/us"
+                "lt": {
+                  "manifestPath": "/qad/global/lt/utcompil.wrk",
+                  "resultPath": "/qad/global/lt"
+                },
+                "us": {
+                  "manifestPath": "/qad/global/us/utcompil.wrk",
+                  "resultPath": "/qad/global/us"
+                }
               }
             }
           }

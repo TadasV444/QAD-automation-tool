@@ -98,7 +98,7 @@ public sealed class CompilePlanTests
     public void A_custom_statement_template_is_used_verbatim()
     {
         var environment = Environment(
-            recipe: new EditorCompileSettings("editor", "COMPILE {remoteFile} SAVE INTO {remoteDirectory} XREF x."));
+            recipe: new EditorCompileSettings("editor", null, [], EditorCompileSettings.DefaultSteps, false, "COMPILE {remoteFile} SAVE INTO {remoteDirectory} XREF x."));
 
         var compile = Assert.Single(
             CompilePlan.Create(Ticket(Qrf("rep.p")), environment, "pilot").Using<PlannedEditorCompile>());
@@ -130,7 +130,13 @@ public sealed class CompilePlanTests
         CompilePlan.Create(Ticket(files), Environment(), "pilot");
 
     private static readonly EditorCompileSettings DefaultRecipe =
-        new("compile_editor us test", EditorCompileSettings.DefaultStatementTemplate);
+        new(
+            "compile_editor us test",
+            null,
+            [],
+            EditorCompileSettings.DefaultSteps,
+            false,
+            EditorCompileSettings.DefaultStatementTemplate);
 
     /// <summary>An environment that can compile QRF, unless told otherwise.</summary>
     private static QadEnvironment Environment(
