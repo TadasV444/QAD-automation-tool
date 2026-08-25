@@ -64,6 +64,44 @@ public sealed class EditorStepsTests
     }
 
     [Fact]
+    public void A_repeated_key_is_sent_as_many_times_as_it_is_listed()
+    {
+        // A third site needs F4 twice to reach its input and F1 twice to
+        // compile. Nothing may collapse the duplicates - the second press is
+        // what the wrapper is waiting for.
+        Uploaded("rep.p");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
+
+        Compile(ThirdSite());
+
+        Assert.Equal(
+            [
+                ProgressKeys.NewBuffer,
+                ProgressKeys.NewBuffer,
+                $"{QrfPath}/rep.p",
+                ProgressKeys.Go,
+                ProgressKeys.Go
+            ],
+            KeysAfterEditorOpens("/appl/local/reports/compile"));
+    }
+
+    [Fact]
+    public void An_absolute_command_can_still_be_opened_once_per_language()
+    {
+        // The combination this third site introduced: no cd, because the
+        // command is absolute, but still one run per language. The two
+        // settings are independent and had only ever been seen together.
+        Uploaded("rep.p");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
+
+        Compile(ThirdSite());
+
+        Assert.DoesNotContain("cd ", _shell.Typed, StringComparison.Ordinal);
+        Assert.Contains("/appl/local/reports/compile lt prototype", _shell.Typed, StringComparison.Ordinal);
+        Assert.Contains("/appl/local/reports/compile us prototype", _shell.Typed, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_language_aware_wrapper_is_opened_once_per_language()
     {
         Uploaded("rep.p");
@@ -141,6 +179,24 @@ public sealed class EditorStepsTests
             QrfPath,
             ["lt", "us"],
             [EditorStep.Enter, EditorStep.Statement, EditorStep.Go, EditorStep.Go],
+            true,
+            "{remoteFile}");
+
+    /// <summary>
+    /// A third site: absolute command, per language, F4 twice then F1 twice.
+    /// </summary>
+    private static EditorCompileSettings ThirdSite() =>
+        new(
+            "/appl/local/reports/compile {language} prototype",
+            null,
+            ["lt", "us"],
+            [
+                EditorStep.NewBuffer,
+                EditorStep.NewBuffer,
+                EditorStep.Statement,
+                EditorStep.Go,
+                EditorStep.Go
+            ],
             true,
             "{remoteFile}");
 
