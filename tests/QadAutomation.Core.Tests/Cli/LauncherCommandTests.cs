@@ -188,11 +188,46 @@ public sealed class LauncherCommandTests : IDisposable
     }
 
     [Fact]
+    public void Enter_at_the_end_goes_back_to_the_menu()
+    {
+        // The reflex at any prompt is Enter, and a menu that closed on it would
+        // send the operator back to relaunching the program - which is the whole
+        // thing this was built to stop. Going round again is the default; only
+        // leaving has to be typed.
+        var (exitCode, output, _) = Run("1", "1", "n", "", "1", "2", "n", "q");
+
+        Assert.Equal(ExitCode.Ok, exitCode);
+        Assert.Contains("Ticket #100001", output);
+        Assert.Contains("Ticket #100002", output);
+        Assert.Equal(2, Occurrences(output, "QAD Compile Automation Tool"));
+    }
+
+    [Fact]
+    public void Quitting_takes_a_word_rather_than_a_keystroke()
+    {
+        // Going round again costs one keystroke; quitting by accident costs a
+        // relaunch and everything on screen.
+        var (_, output, _) = Run("1", "1", "n", "q");
+
+        Assert.Equal(1, Occurrences(output, "QAD Compile Automation Tool"));
+    }
+
+    [Fact]
+    public void Anything_unrecognised_at_the_end_keeps_the_menu_open()
+    {
+        // Erring towards staying: an unexpected keystroke should not be read as
+        // a decision to close.
+        var (_, output, _) = Run("1", "1", "n", "wat", "1", "1", "n", "q");
+
+        Assert.Equal(2, Occurrences(output, "QAD Compile Automation Tool"));
+    }
+
+    [Fact]
     public void Saying_yes_at_the_end_goes_back_to_the_start()
     {
         // A ticket is rarely the only one. Relaunching to deploy the next is
         // the friction the menu exists to remove.
-        var (exitCode, output, _) = Run("1", "1", "n", "y", "1", "2", "n", "n");
+        var (exitCode, output, _) = Run("1", "1", "n", "y", "1", "2", "n", "q");
 
         Assert.Equal(ExitCode.Ok, exitCode);
         Assert.Contains("Ticket #100001", output);
@@ -209,9 +244,9 @@ public sealed class LauncherCommandTests : IDisposable
         // the operator wants to retry rather than start the program again.
         _rasDial.ConnectFailureCode = 800;
 
-        var (_, output, error) = Run("1", "1", "y", "n");
+        var (_, output, error) = Run("1", "1", "y", "q");
 
-        Assert.Contains("Run again?", output);
+        Assert.Contains("main menu", output);
         Assert.NotEqual(string.Empty, error);
     }
 

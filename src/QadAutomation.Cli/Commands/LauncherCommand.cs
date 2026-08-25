@@ -96,18 +96,40 @@ public sealed class LauncherCommand
     }
 
     /// <summary>
-    /// Asks whether to go round again.
+    /// Asks whether to go round again. Returning to the menu is the default.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// <b>Enter goes back, not out.</b> The reflex at any prompt is to press
+    /// Enter, and a menu that closed on it would send the operator back to
+    /// relaunching the program - which is the entire thing this was built to
+    /// stop. Leaving is the deliberate act, so leaving is what has to be typed.
+    /// </para>
+    /// <para>
+    /// The safe direction, too: going round again costs one keystroke, while
+    /// quitting by accident costs a relaunch and the loss of everything on
+    /// screen.
+    /// </para>
+    /// <para>
     /// This doubles as what holds the window open when the tool was
     /// double-clicked, which is why nothing is printed after it.
+    /// </para>
     /// </remarks>
     private bool Again()
     {
         _output.WriteLine();
-        _output.Write("Run again? [y/N] ");
+        _output.Write("[Enter] main menu    [q] quit    > ");
 
-        return _input.ReadLine()?.Trim() is "y" or "Y";
+        var answer = _input.ReadLine();
+
+        // End of input is not a person choosing to stay. Nobody is there, so
+        // looping would spin forever - this is what stops a script hanging.
+        if (answer is null)
+        {
+            return false;
+        }
+
+        return answer.Trim().ToLowerInvariant() is not ("q" or "quit" or "exit" or "n");
     }
 
     private int RunOnce()
