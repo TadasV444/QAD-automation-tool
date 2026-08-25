@@ -16,20 +16,21 @@ public sealed record ClientProfile(
     IReadOnlyList<QadEnvironment> Environments)
 {
     /// <summary>
-    /// Finds an environment by name, case-insensitively (<c>prod</c> == <c>PROD</c>).
+    /// Finds an environment by name or alias, case-insensitively
+    /// (<c>prod</c> == <c>PROD</c>, and <c>euro</c> where that is configured).
     /// </summary>
     /// <exception cref="ConfigurationException">
     /// Thrown when no such environment exists. The message lists what <i>is</i>
-    /// available, because the most likely cause is a typo at the command line.
+    /// available, with aliases, because the most likely cause is a typo at the
+    /// command line - or the operator using the site's word for it.
     /// </exception>
     public QadEnvironment RequireEnvironment(string name)
     {
-        var match = Environments.FirstOrDefault(
-            e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+        var match = Environments.FirstOrDefault(e => e.Answers(name));
 
         if (match is null)
         {
-            var available = string.Join(", ", Environments.Select(e => e.Name));
+            var available = string.Join(", ", Environments.Select(e => e.Described));
             throw new ConfigurationException(
                 $"Client '{Id}' has no environment '{name}'. Available: {available}.");
         }

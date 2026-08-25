@@ -190,6 +190,26 @@ public sealed class ConfigurationResolver
 
         var label = $"Client '{clientId}', environment '{name}'";
 
+        var aliases = new List<string>();
+
+        // Aliases share the name space, because they are matched the same way.
+        // An alias colliding with another environment's name would make
+        // 'qad deploy <client> prod' ambiguous - which is the single worst
+        // thing for this tool to be ambiguous about.
+        foreach (var alias in Trimmed(environment.Aliases))
+        {
+            if (seenNames.Add(alias))
+            {
+                aliases.Add(alias);
+                continue;
+            }
+
+            errors.Add(
+                $"{label}: alias '{alias}' is already used by this client, as a name or " +
+                "another alias. Every environment must be unambiguous.");
+            return null;
+        }
+
         // The override rule, in one place: a value set on the environment wins,
         // otherwise the client default applies. Null means "not specified", which
         // is exactly why the raw layer keeps everything nullable.
@@ -233,6 +253,10 @@ public sealed class ConfigurationResolver
             return null;
         }
 
+        // Inferred from the canonical name only. An alias like 'euro' is exactly
+        // the case where a site's own word does not look dangerous, so letting
+        // it decide would defeat the guard it is meant to trigger. Where the
+        // name does not give it away, 'isProduction' says so explicitly.
         var isProduction = environment.IsProduction ?? ProductionNames.Contains(name);
 
         return new QadEnvironment(
@@ -240,7 +264,8 @@ public sealed class ConfigurationResolver
             isProduction,
             new SshEndpoint(host, port, username, NullIfBlank(password), privateKeyPath),
             paths,
-            compile);
+            compile,
+            aliases);
     }
 
     /// <summary>

@@ -49,6 +49,13 @@ public sealed class ClientSection
 public sealed class EnvironmentSection
 {
     public string? Name { get; set; }
+
+    /// <summary>
+    /// Other names this environment answers to, for sites whose own word for it
+    /// differs from the one configured. Ignored on a client's <c>defaults</c>.
+    /// </summary>
+    public List<string>? Aliases { get; set; }
+
     public bool? IsProduction { get; set; }
 
     public string? Host { get; set; }

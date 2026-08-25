@@ -154,6 +154,59 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
+    public void An_alias_is_read_from_the_environment()
+    {
+        var file = FileWith(client => client.Environments =
+        [
+            new EnvironmentSection { Name = "PROD", Aliases = ["euro", " live "] }
+        ]);
+
+        var environment = Resolve(file).Clients[0].Environments[0];
+
+        Assert.Equal(["euro", "live"], environment.Aliases);
+        Assert.True(environment.Answers("EURO"));
+    }
+
+    [Fact]
+    public void An_alias_that_collides_with_another_environments_name_is_rejected()
+    {
+        // 'qad deploy pilot prod' must never be a question with two answers.
+        var file = FileWith(client => client.Environments =
+        [
+            new EnvironmentSection { Name = "PROD" },
+            new EnvironmentSection { Name = "DEVL", Aliases = ["prod"] }
+        ]);
+
+        Assert.Contains("unambiguous", ResolveError(file), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_alias_that_collides_with_another_alias_is_rejected()
+    {
+        var file = FileWith(client => client.Environments =
+        [
+            new EnvironmentSection { Name = "TEST", Aliases = ["euro"] },
+            new EnvironmentSection { Name = "PROD", Aliases = ["euro"] }
+        ]);
+
+        Assert.Contains("unambiguous", ResolveError(file), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_alias_does_not_make_an_environment_production()
+    {
+        // 'euro' is precisely the case where a site's own word does not look
+        // dangerous. Letting it decide would defeat the guard it should trigger,
+        // so production is inferred from the canonical name alone.
+        var file = FileWith(client => client.Environments =
+        [
+            new EnvironmentSection { Name = "DEVL", Aliases = ["prod"] }
+        ]);
+
+        Assert.False(Resolve(file).Clients[0].Environments[0].IsProduction);
+    }
+
+    [Fact]
     public void Duplicate_environment_names_are_rejected()
     {
         var file = FileWith(client => client.Environments =
