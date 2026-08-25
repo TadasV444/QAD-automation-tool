@@ -46,6 +46,16 @@ public static class CommandLineParser
 {
     public const string ConfigOption = "--config";
 
+    /// <summary>
+    /// The guided flow, and what bare <c>qad</c> resolves to.
+    /// </summary>
+    /// <remarks>
+    /// Named here rather than written out at each use because two places depend
+    /// on it agreeing: the default below, and the decision to hold the console
+    /// open afterwards.
+    /// </remarks>
+    public const string MenuCommand = "menu";
+
     /// <summary>Show what would happen without changing anything.</summary>
     public const string DryRunFlag = "--dry-run";
 
@@ -123,6 +133,10 @@ public static class CommandLineParser
             }
         }
 
-        return new CommandLineArguments(command ?? "help", positional, configPath, flags);
+        // Nothing to do means the guided flow, not the usage text. That is what
+        // a double-clicked shortcut passes, and an operator who opened the tool
+        // that way wants to deploy, not to read. 'qad help' and '-h' still
+        // print the usage.
+        return new CommandLineArguments(command ?? MenuCommand, positional, configPath, flags);
     }
 }
