@@ -33,6 +33,8 @@ public sealed class CommandLineApplication
     private readonly IVpnConnectorFactory _connectors;
     private readonly ISftpSessionFactory _sftp;
     private readonly ISshShellFactory _shells;
+    private readonly TextReader _input;
+    private readonly bool _ownsConsole;
 
     /// <param name="output">Where normal output goes.</param>
     /// <param name="error">Where diagnostics go.</param>
@@ -48,18 +50,34 @@ public sealed class CommandLineApplication
     /// on the other end. Separate from <paramref name="sftp"/> because they are
     /// genuinely two connections: one to type into, one to read timestamps from.
     /// </param>
+    /// <param name="input">
+    /// Where the guided flow reads its answers. Overridable for the same reason
+    /// the writers are: a menu whose answers can be supplied by a test is a menu
+    /// that can be tested at all.
+    /// </param>
     public CommandLineApplication(
         TextWriter output,
         TextWriter error,
         IVpnConnectorFactory? connectors = null,
         ISftpSessionFactory? sftp = null,
-        ISshShellFactory? shells = null)
+        ISshShellFactory? shells = null,
+        TextReader? input = null)
     {
         _output = output;
         _error = error;
         _connectors = connectors ?? new VpnConnectorFactory(new ProcessRunner());
         _sftp = sftp ?? new SshNetSftpSessionFactory();
         _shells = shells ?? new SshNetShellFactory();
+        _input = input ?? Console.In;
+
+        // A double-clicked shortcut gets its own console window, which Windows
+        // closes the moment the process exits - taking the result with it. So
+        // the guided flow waits for a keypress before it ends.
+        //
+        // Only when nobody supplied the input and nothing is piped in: a test
+        // driving the flow from a string, or a script feeding it answers, must
+        // not be left waiting for a person who is not there.
+        _ownsConsole = input is null && !Console.IsInputRedirected;
     }
 
     public int Run(string[] args)
@@ -109,6 +127,35 @@ public sealed class CommandLineApplication
             _error.WriteLine(ex);
             return ExitCode.Unexpected;
         }
+        finally
+        {
+            // In a finally so it also runs when the flow ended in an error -
+            // which is precisely the run whose output is worth reading, and the
+            // one a closing window would take away.
+            HoldConsoleOpenAfter(parsed);
+        }
+    }
+
+    /// <summary>
+    /// Waits for a keypress, but only after the guided flow and only when this
+    /// process owns the window it printed to.
+    /// </summary>
+    /// <remarks>
+    /// Never after a command-line verb. Someone who typed <c>qad upload ...</c>
+    /// has a shell to return to and would find the pause an obstruction; someone
+    /// who double-clicked has nowhere for the output to go.
+    /// </remarks>
+    private void HoldConsoleOpenAfter(CommandLineArguments args)
+    {
+        if (!_ownsConsole ||
+            !string.Equals(args.Command, CommandLineParser.MenuCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _output.WriteLine();
+        _output.Write("Press Enter to close...");
+        _input.ReadLine();
     }
 
     private int Dispatch(CommandLineArguments args)
@@ -118,6 +165,18 @@ public sealed class CommandLineApplication
             case "help":
                 WriteUsage(_output);
                 return ExitCode.Ok;
+
+            case CommandLineParser.MenuCommand:
+                return Expect(args, 0, "qad menu")
+                    ? new LauncherCommand(
+                            CreateLoader(args),
+                            CreateTicketReader(args),
+                            CreateDeploy(args),
+                            _input,
+                            _output,
+                            _error)
+                        .Execute()
+                    : ExitCode.UsageError;
 
             case "validate":
                 return Expect(args, 0, "qad validate")
@@ -164,14 +223,7 @@ public sealed class CommandLineApplication
 
             case "deploy":
                 return Expect(args, 3, "qad deploy <client> <environment> <ticket> [--dry-run] [--yes] [--no-backup]")
-                    ? new DeployCommand(
-                            CreateLoader(args),
-                            CreateTicketReader(args),
-                            _connectors,
-                            new FileUploader(_sftp),
-                            new QadCompiler(_shells, _sftp),
-                            _output,
-                            _error)
+                    ? CreateDeploy(args)
                         .Execute(
                             args.Target!,
                             args.Argument(1)!,
@@ -262,6 +314,21 @@ public sealed class CommandLineApplication
         return false;
     }
 
+    /// <summary>
+    /// The upload-then-compile command, built the same way for both the
+    /// command line and the guided flow - so neither can quietly do something
+    /// the other does not.
+    /// </summary>
+    private DeployCommand CreateDeploy(CommandLineArguments args) =>
+        new(
+            CreateLoader(args),
+            CreateTicketReader(args),
+            _connectors,
+            new FileUploader(_sftp),
+            new QadCompiler(_shells, _sftp),
+            _output,
+            _error);
+
     private static IConfigurationLoader CreateLoader(CommandLineArguments args) =>
         new JsonConfigurationLoader(new ConfigurationLocator(args.ConfigPath));
 
@@ -279,6 +346,8 @@ public sealed class CommandLineApplication
             QAD Compile Automation Tool
 
             Usage:
+              qad                           Guided: pick a client, environment and ticket
+              qad menu                      The same thing, named
               qad validate                  Load the configuration and print a redacted summary
               qad tickets                   List ticket folders in the working folder
               qad ticket <ticket>           Show how a ticket folder's files classify as SRC/QRF

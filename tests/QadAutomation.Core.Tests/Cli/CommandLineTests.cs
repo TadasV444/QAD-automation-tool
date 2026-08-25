@@ -5,9 +5,19 @@ namespace QadAutomation.Core.Tests.Cli;
 public sealed class CommandLineParserTests
 {
     [Fact]
-    public void No_arguments_shows_help()
+    public void No_arguments_opens_the_guided_flow()
     {
-        Assert.Equal("help", CommandLineParser.Parse([]).Command);
+        // What a double-clicked shortcut passes. Someone who opened the tool
+        // that way came to deploy, not to read a usage screen.
+        Assert.Equal("menu", CommandLineParser.Parse([]).Command);
+    }
+
+    [Fact]
+    public void Help_is_still_reachable_by_asking_for_it()
+    {
+        Assert.Equal("help", CommandLineParser.Parse(["help"]).Command);
+        Assert.Equal("help", CommandLineParser.Parse(["--help"]).Command);
+        Assert.Equal("help", CommandLineParser.Parse(["-h"]).Command);
     }
 
     [Fact]
