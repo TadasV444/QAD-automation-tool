@@ -167,25 +167,47 @@ internal sealed class ProgressEditorCompiler
     {
         var screen = string.Empty;
 
-        foreach (var step in steps)
+        for (var i = 0; i < steps.Count; i++)
         {
-            shell.Send(step switch
+            var text = Text(steps[i], statement);
+
+            // Typing a line and pressing Return is one act at a keyboard, not
+            // two separated by a pause for the screen to catch up. Sending them
+            // apart broke the first site's editor - a regression introduced by
+            // turning this sequence into data, and invisible until it ran
+            // against the real thing.
+            //
+            // Coalescing here rather than adding a combined step keeps the
+            // config describing keys, which is what an operator can check
+            // against what their fingers do.
+            if (steps[i] is EditorStep.Statement && Next(steps, i) is EditorStep.Enter)
             {
-                // No implied Return. Whether one follows is the wrapper's
-                // business and is said out loud in the step list, because one
-                // site needs it and the other is broken by it.
-                EditorStep.Statement => statement,
-                EditorStep.Enter => ProgressKeys.Enter,
-                EditorStep.Go => ProgressKeys.Go,
-                EditorStep.NewBuffer => ProgressKeys.NewBuffer,
-                _ => throw new ArgumentOutOfRangeException(nameof(steps), step, "Unknown editor step.")
-            });
+                text += ProgressKeys.Enter;
+                i++;
+            }
+
+            shell.Send(text);
 
             screen = shell.ReadUntilIdle(SettleFor, StepTimeout);
         }
 
         return screen;
     }
+
+    private static EditorStep? Next(IReadOnlyList<EditorStep> steps, int index) =>
+        index + 1 < steps.Count ? steps[index + 1] : null;
+
+    private static string Text(EditorStep step, string statement) => step switch
+    {
+        // No implied Return. Whether one follows is the wrapper's business and
+        // is said out loud in the step list, because one site needs it and
+        // another is broken by it.
+        EditorStep.Statement => statement,
+        EditorStep.Enter => ProgressKeys.Enter,
+        EditorStep.Go => ProgressKeys.Go,
+        EditorStep.NewBuffer => ProgressKeys.NewBuffer,
+        _ => throw new ArgumentOutOfRangeException(nameof(step), step, "Unknown editor step.")
+    };
 
     /// <summary>
     /// Whether a compile happened, from the two timestamps.
