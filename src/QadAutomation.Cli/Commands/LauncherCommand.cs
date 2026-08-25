@@ -52,8 +52,68 @@ public sealed class LauncherCommand
         _error = error;
     }
 
+    /// <summary>
+    /// Runs the flow until the operator says they are done.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Looping rather than exiting because a ticket is rarely the only one, and
+    /// relaunching to deploy the next is friction the menu exists to remove.
+    /// </para>
+    /// <para>
+    /// Failures the tool can explain are caught here and looped over too. The
+    /// commonest of them is a FortiClient tunnel that is not up - which the
+    /// operator fixes in ten seconds and then wants to try again, not start the
+    /// program over. Anything it cannot explain is left to escape: that is a
+    /// defect, and repeating it would only bury the stack trace.
+    /// </para>
+    /// </remarks>
     public int Execute()
     {
+        var result = ExitCode.Ok;
+
+        while (true)
+        {
+            try
+            {
+                result = RunOnce();
+            }
+            catch (Exception ex) when (ExitCode.IsExpected(ex))
+            {
+                _error.WriteLine(ex.Message);
+                result = ExitCode.For(ex);
+            }
+
+            if (!Again())
+            {
+                return result;
+            }
+
+            _output.WriteLine();
+            _output.WriteLine(new string('-', 60));
+            _output.WriteLine();
+        }
+    }
+
+    /// <summary>
+    /// Asks whether to go round again.
+    /// </summary>
+    /// <remarks>
+    /// This doubles as what holds the window open when the tool was
+    /// double-clicked, which is why nothing is printed after it.
+    /// </remarks>
+    private bool Again()
+    {
+        _output.WriteLine();
+        _output.Write("Run again? [y/N] ");
+
+        return _input.ReadLine()?.Trim() is "y" or "Y";
+    }
+
+    private int RunOnce()
+    {
+        // Reloaded each time round, so a configuration corrected between runs
+        // takes effect without relaunching - the same reason the loop exists.
         var configuration = _loader.Load().Configuration;
 
         _output.WriteLine("QAD Compile Automation Tool");

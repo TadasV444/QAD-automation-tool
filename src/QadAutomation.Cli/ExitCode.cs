@@ -1,3 +1,8 @@
+using QadAutomation.Core.Configuration;
+using QadAutomation.Core.Tickets;
+using QadAutomation.Core.Transfer;
+using QadAutomation.Core.Vpn;
+
 namespace QadAutomation.Cli;
 
 /// <summary>
@@ -37,4 +42,32 @@ public static class ExitCode
     public const int CompileError = 6;
 
     public const int Unexpected = 99;
+
+    /// <summary>
+    /// Whether this is a failure the tool anticipated and can explain.
+    /// </summary>
+    /// <remarks>
+    /// The line between "your VPN is down" and "this tool has a bug". Everything
+    /// on this side gets a sentence; everything else gets a stack trace, because
+    /// for those the stack trace is the useful part.
+    /// </remarks>
+    public static bool IsExpected(Exception exception) => exception is
+        ConfigurationException or TicketFolderException or VpnException or TransferException;
+
+    /// <summary>
+    /// The code for an anticipated failure.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than inline in the dispatcher because two callers need to
+    /// agree: the top-level handler, and the guided flow, which catches these
+    /// itself so that a forgotten VPN costs a retry rather than a relaunch.
+    /// </remarks>
+    public static int For(Exception exception) => exception switch
+    {
+        ConfigurationException => ConfigurationError,
+        TicketFolderException => TicketError,
+        VpnException => VpnError,
+        TransferException => TransferError,
+        _ => Unexpected
+    };
 }

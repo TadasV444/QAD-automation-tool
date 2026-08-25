@@ -188,6 +188,44 @@ public sealed class LauncherCommandTests : IDisposable
     }
 
     [Fact]
+    public void Saying_yes_at_the_end_goes_back_to_the_start()
+    {
+        // A ticket is rarely the only one. Relaunching to deploy the next is
+        // the friction the menu exists to remove.
+        var (exitCode, output, _) = Run("1", "1", "n", "y", "1", "2", "n", "n");
+
+        Assert.Equal(ExitCode.Ok, exitCode);
+        Assert.Contains("Ticket #100001", output);
+        Assert.Contains("Ticket #100002", output);
+
+        // Two passes through the flow, so the banner appears twice.
+        Assert.Equal(2, Occurrences(output, "QAD Compile Automation Tool"));
+    }
+
+    [Fact]
+    public void A_failure_the_tool_can_explain_keeps_the_menu_open()
+    {
+        // The commonest is a tunnel that is not up: fixed in ten seconds, and
+        // the operator wants to retry rather than start the program again.
+        _rasDial.ConnectFailureCode = 800;
+
+        var (_, output, error) = Run("1", "1", "y", "n");
+
+        Assert.Contains("Run again?", output);
+        Assert.NotEqual(string.Empty, error);
+    }
+
+    [Fact]
+    public void The_exit_code_is_the_last_runs()
+    {
+        _rasDial.ConnectFailureCode = 800;
+
+        var (exitCode, _, _) = Run("1", "1", "y", "n");
+
+        Assert.Equal(ExitCode.VpnError, exitCode);
+    }
+
+    [Fact]
     public void A_supplied_input_is_never_left_waiting_for_a_keypress()
     {
         // A double-clicked shortcut gets its own window and needs holding open
@@ -210,6 +248,9 @@ public sealed class LauncherCommandTests : IDisposable
     }
 
     // --- helpers ---------------------------------------------------------
+
+    private static int Occurrences(string haystack, string needle) =>
+        haystack.Split(needle).Length - 1;
 
     private void Ticket(string name)
     {
