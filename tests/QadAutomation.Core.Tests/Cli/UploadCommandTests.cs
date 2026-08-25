@@ -51,7 +51,7 @@ public sealed class UploadCommandTests : IDisposable
                 },
                 "environments": [
                   { "name": "TEST" },
-                  { "name": "PROD" }
+                  { "name": "PROD", "aliases": ["euro"] }
                 ]
               }]
             }
@@ -206,6 +206,30 @@ public sealed class UploadCommandTests : IDisposable
         Assert.Equal(ExitCode.TransferError, exitCode);
         Assert.Contains("Nothing was uploaded", error.ToString());
         Assert.Empty(server.Files);
+    }
+
+    [Fact]
+    public void An_environment_can_be_named_by_its_alias()
+    {
+        // The site's own word for production. It still counts as production -
+        // the guard is keyed to the environment, not to the word typed.
+        var (exitCode, _, error) = Run("upload", "pilot", "euro", "9999555");
+
+        Assert.Equal(ExitCode.UsageError, exitCode);
+        Assert.Contains("PRODUCTION", error);
+        Assert.Empty(_server.Files);
+    }
+
+    [Fact]
+    public void An_alias_is_reported_by_the_canonical_name()
+    {
+        // Two names in, one name out, so two people deploying the same thing
+        // leave the same record.
+        var (exitCode, output, _) = Run("upload", "pilot", "euro", "9999555", "--yes");
+
+        Assert.Equal(ExitCode.Ok, exitCode);
+        Assert.Contains("Environment : PROD", output);
+        Assert.DoesNotContain("euro", output);
     }
 
     [Fact]

@@ -158,7 +158,27 @@
         // automatically. Set "isProduction" explicitly to override that.
         // A separate secret is used here because production credentials
         // usually differ.
-        { "name": "PROD", "host": "prod.example.local", "password": "${PILOT_PROD_SSH_PASSWORD}" }
+        //
+        // "aliases" are other words this environment answers to on the command
+        // line, for sites whose own vocabulary differs - `qad deploy pilot euro
+        // 9999555 --yes` here. They are matched case-insensitively, like names.
+        //
+        // Two things worth knowing:
+        //   - the CANONICAL name is what every message reports, whichever word
+        //     was typed, so two people deploying the same thing leave the same
+        //     record;
+        //   - an alias never makes an environment production. That is inferred
+        //     from the real name, or stated with "isProduction" - otherwise a
+        //     harmless-looking alias could quietly disarm the guard.
+        //
+        // Config is rejected if two environments of one client share any name
+        // or alias.
+        {
+          "name": "PROD",
+          "aliases": ["euro"],
+          "host": "prod.example.local",
+          "password": "${PILOT_PROD_SSH_PASSWORD}"
+        }
       ]
     },
 

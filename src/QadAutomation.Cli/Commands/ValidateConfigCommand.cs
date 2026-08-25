@@ -63,7 +63,11 @@ public sealed class ValidateConfigCommand
             // PROD is called out visually because everything dangerous this tool
             // will eventually do is dangerous specifically there.
             var marker = environment.IsProduction ? "  ** PRODUCTION **" : string.Empty;
-            _output.WriteLine($"  {environment.Name}{marker}");
+
+            // Aliases shown here and nowhere else in the output: this is the
+            // screen an operator reads to learn what they may type. Everything
+            // afterwards reports by the canonical name only.
+            _output.WriteLine($"  {environment.Described}{marker}");
 
             var ssh = environment.Ssh;
             var auth = ssh.UsesKeyAuthentication
