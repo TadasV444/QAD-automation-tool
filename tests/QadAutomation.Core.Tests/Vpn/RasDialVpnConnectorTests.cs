@@ -245,11 +245,9 @@ public sealed class VpnConnectorFactoryTests
     }
 
     [Fact]
-    public void FortiClient_fails_with_advice_rather_than_a_null_reference()
+    public void FortiClient_gets_the_connector_that_verifies_rather_than_dials()
     {
-        var message = Assert.Throws<VpnException>(
-            () => _factory.Create(new VpnSettings(VpnType.FortiClient, null, null, null))).Message;
-
-        Assert.Contains("Connect it by hand", message);
+        Assert.IsType<FortiClientVpnConnector>(
+            _factory.Create(new VpnSettings(VpnType.FortiClient, "Tunnel", null, null)));
     }
 }

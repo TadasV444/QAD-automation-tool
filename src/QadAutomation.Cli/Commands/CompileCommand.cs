@@ -177,8 +177,19 @@ public sealed class CompileCommand
             // messages are whole sentences, so nothing real is this short.
             .Where(line => line.Length >= 3 && !IsBoxDrawing(line))
             .Distinct(StringComparer.Ordinal)
-            .Take(20)];
+            // The TAIL, not the head. A build script opens with a banner of
+            // paths and version numbers and says what went wrong at the end;
+            // keeping the first lines showed a verbose log's startup and none
+            // of its outcome. The editor's screens are shorter than this, so
+            // they are unaffected.
+            .TakeLast(MaxScreenLines)];
     }
+
+    /// <summary>
+    /// Enough for a Progress error box and the lines around a build failure,
+    /// without reprinting an entire verbose log per program.
+    /// </summary>
+    private const int MaxScreenLines = 30;
 
     /// <summary>
     /// ANSI escape sequences: cursor moves, colour, and character-set selection.
@@ -195,9 +206,18 @@ public sealed class CompileCommand
     /// output is plain lines - without this, a whole banner of shell output
     /// collapses into one unreadable run-on.
     /// </para>
+    /// <para>
+    /// The first alternative is an OSC sequence - the one a shell prompt uses to
+    /// set the window title - and it has to be matched whole. Left to the
+    /// catch-all it loses only its <c>ESC</c>, and the title text itself
+    /// survives into the output as a stray <c>0;user@host:/path</c>.
+    /// </para>
     /// </remarks>
-    private static readonly Regex EscapeSequence =
-        new(@"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)|[\r\n]+", RegexOptions.Compiled);
+    private static readonly Regex EscapeSequence = new(
+        @"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)" +
+        @"|\x1b(?:\[[0-9;?]*[ -/]*[@-~]|[()][0-9A-Za-z]|.)" +
+        @"|[\r\n]+",
+        RegexOptions.Compiled);
 
     /// <summary>
     /// Removes the box the editor draws around an error, leaving its contents.

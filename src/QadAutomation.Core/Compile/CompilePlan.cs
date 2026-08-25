@@ -236,7 +236,7 @@ public sealed record CompilePlan(
 
         var results = recipe.Languages.ToDictionary(
             language => language.Key,
-            language => $"{language.Value.TrimEnd('/')}/{prefix}/{SwapExtension(file.FileName)}",
+            language => $"{language.Value.ResultRoot.TrimEnd('/')}/{prefix}/{SwapExtension(file.FileName)}",
             StringComparer.Ordinal);
 
         compiles.Add(new PlannedManifestCompile(file, remoteFile, results));

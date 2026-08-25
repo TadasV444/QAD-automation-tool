@@ -193,6 +193,30 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
+    public void A_forticlient_vpn_needs_the_tunnels_name()
+    {
+        // The tool cannot dial this one, so the whole of its behaviour is a
+        // message asking the operator to connect it. Without a name that
+        // message cannot say what to connect.
+        var file = FileWith(client => client.Vpn = new VpnSection { Type = "FortiClient" });
+
+        Assert.Contains("connectionName", ResolveError(file), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_forticlient_vpn_can_name_the_adapter_to_look_for()
+    {
+        var file = FileWith(client => client.Vpn = new VpnSection
+        {
+            Type = "FortiClient",
+            ConnectionName = "Tunnel",
+            AdapterName = "Example-Tunnel"
+        });
+
+        Assert.Equal("Example-Tunnel", Resolve(file).Clients[0].Vpn.AdapterName);
+    }
+
+    [Fact]
     public void A_missing_compile_block_is_not_an_error()
     {
         // Uploading works without compiling, and SRC has no verified recipe yet.
@@ -250,14 +274,16 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
-    public void A_src_recipe_needs_a_manifest_a_directory_a_command_and_languages()
+    public void A_src_recipe_needs_a_directory_a_command_and_languages()
     {
+        // All three at once, not the first one found: a half-filled recipe
+        // usually means every field is missing, and reporting them one run at
+        // a time turns one fix into three.
         var file = FileWith(client => client.Defaults!.Compile =
             new CompileSection { Src = new SrcCompileSection { Manifest = new ManifestCompileSection() } });
 
         var message = ResolveError(file);
 
-        Assert.Contains("'manifestPath'", message);
         Assert.Contains("'workingDirectory'", message);
         Assert.Contains("'command'", message);
         Assert.Contains("'languages'", message);
@@ -275,10 +301,16 @@ public sealed class ConfigurationResolverTests
             {
                 Manifest = new ManifestCompileSection
                 {
-                    ManifestPath = "/qad/global/utcompil.wrk",
                     WorkingDirectory = "/qad/global",
                     Command = "./compile us devl",
-                    Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+                    Languages = new Dictionary<string, LanguageTargetSection>
+                    {
+                        ["us"] = new()
+                        {
+                            ManifestPath = "/qad/global/utcompil.wrk",
+                            ResultPath = "/qad/global/us"
+                        }
+                    }
                 }
             }
         });
@@ -287,31 +319,68 @@ public sealed class ConfigurationResolverTests
     }
 
     [Fact]
-    public void A_src_recipe_maps_each_language_to_where_its_output_lands()
+    public void A_src_recipe_maps_each_language_to_its_own_manifest_and_output()
     {
-        var file = FileWith(client => client.Defaults!.Compile = new CompileSection
+        // The second site's layout: a manifest per language, beside that
+        // language's output, rather than one shared file.
+        var file = FileWith(client => client.Defaults!.Compile = ManifestCompile(
+            ["lt", "/qad/global/lt/utcompil.wrk", "/qad/global/lt"],
+            ["us", "/qad/global/us/utcompil.wrk", "/qad/global/us"]));
+
+        var src = Resolve(file).Clients[0].Environments[0].Compile.Src!.Manifest!;
+
+        Assert.Equal("./compile {language} devl".Replace("{language}", "lt"), src.CommandFor("lt"));
+        Assert.Equal("/qad/global/us", src.Languages["us"].ResultRoot);
+        Assert.Equal("/qad/global/lt/utcompil.wrk", src.Languages["lt"].ManifestPath);
+
+        // Two distinct files to write, where the shared-manifest site has one.
+        Assert.Equal(2, src.ManifestPaths.Count);
+    }
+
+    [Fact]
+    public void A_manifest_shared_between_languages_is_written_once()
+    {
+        var file = FileWith(client => client.Defaults!.Compile = ManifestCompile(
+            ["lt", "/qad/global/utcompil.wrk", "/qad/global/lt"],
+            ["us", "/qad/global/utcompil.wrk", "/qad/global/us"]));
+
+        var src = Resolve(file).Clients[0].Environments[0].Compile.Src!.Manifest!;
+
+        Assert.Equal("/qad/global/utcompil.wrk", Assert.Single(src.ManifestPaths));
+    }
+
+    [Fact]
+    public void A_language_missing_either_of_its_two_paths_is_refused()
+    {
+        // Named together because they are the same language's two halves.
+        // Apart, a site could write one language's manifest while checking
+        // another's output.
+        var file = FileWith(client => client.Defaults!.Compile = ManifestCompile(
+            ["lt", "/qad/global/lt/utcompil.wrk", null]));
+
+        Assert.Contains("resultPath", ResolveError(file), StringComparison.Ordinal);
+    }
+
+    /// <summary>A manifest recipe from <c>[code, manifestPath, resultPath]</c> triples.</summary>
+    private static CompileSection ManifestCompile(params string?[][] languages) =>
+        new()
         {
             Src = new SrcCompileSection
             {
                 Manifest = new ManifestCompileSection
                 {
-                    ManifestPath = "/qad/global/utcompil.wrk",
                     WorkingDirectory = "/qad/global",
                     Command = "./compile {language} devl",
-                    Languages = new Dictionary<string, string>
-                    {
-                        ["lt"] = "/qad/global/lt",
-                        ["us"] = "/qad/global/us"
-                    }
+                    Languages = languages.ToDictionary(
+                        entry => entry[0]!,
+                        entry => new LanguageTargetSection
+                        {
+                            ManifestPath = entry[1],
+                            ResultPath = entry[2]
+                        })
                 }
             }
-        });
-
-        var src = Resolve(file).Clients[0].Environments[0].Compile.Src!.Manifest!;
-
-        Assert.Equal("./compile lt devl", src.CommandFor("lt"));
-        Assert.Equal("/qad/global/us", src.Languages["us"]);
-    }
+        };
 
     [Fact]
     public void Compile_is_replaced_wholesale_by_an_environment_not_merged()
@@ -327,10 +396,16 @@ public sealed class ConfigurationResolverTests
                     {
                         Manifest = new ManifestCompileSection
                         {
-                            ManifestPath = "/qad/global/utcompil.wrk",
                             WorkingDirectory = "/qad/global",
                             Command = "./compile {language} prod",
-                            Languages = new Dictionary<string, string> { ["us"] = "/qad/global/us" }
+                            Languages = new Dictionary<string, LanguageTargetSection>
+                            {
+                                ["us"] = new()
+                                {
+                                    ManifestPath = "/qad/global/utcompil.wrk",
+                                    ResultPath = "/qad/global/us"
+                                }
+                            }
                         }
                     }
                 }

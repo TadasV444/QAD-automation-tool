@@ -74,13 +74,21 @@ internal sealed class ProgressEditorCompiler
     }
 
     /// <summary>
-    /// Opens the editor and types every statement into it, returning what the
-    /// screen showed for each.
+    /// Runs the whole procedure, returning what the screen showed for each
+    /// program.
     /// </summary>
     /// <remarks>
-    /// One editor session for the whole ticket, with F4 between statements to
-    /// clear the buffer. That mirrors the manual procedure, where F4 is what
-    /// makes the window ready to accept a statement.
+    /// <para>
+    /// Once per language, because one site's wrapper is opened per language and
+    /// the other's is language-neutral - an empty language list runs it once.
+    /// </para>
+    /// <para>
+    /// The screens are keyed by program and overwritten per language, so what
+    /// survives is the last language's. Only the last one can have written the
+    /// artefact being checked, so it is the relevant one - but a report that
+    /// fails in the first language and succeeds in the second is a case this
+    /// cannot show, and the docs say so.
+    /// </para>
     /// </remarks>
     private Dictionary<PlannedEditorCompile, string> RunEditor(
         IReadOnlyList<PlannedEditorCompile> planned,
@@ -90,33 +98,93 @@ internal sealed class ProgressEditorCompiler
     {
         var screens = new Dictionary<PlannedEditorCompile, string>();
 
-        // Disposing the shell closes the channel, which is how this editor is
-        // left - it has no exit key here, and the manual procedure is to close
-        // the window. Tied to `using` so it also happens when a step throws.
-        using var shell = _shells.Open(endpoint);
+        // An empty list still runs once. The placeholder simply does not appear
+        // in a language-neutral command, so substituting nothing is correct.
+        var languages = recipe.Languages.Count > 0 ? recipe.Languages : [string.Empty];
 
-        shell.ReadUntilIdle(SettleFor, StepTimeout);
-
-        report($"Opening the editor: {recipe.EditorCommand}");
-
-        shell.Send(recipe.EditorCommand + ProgressKeys.Enter);
-        shell.ReadUntilIdle(SettleFor, StepTimeout);
-
-        foreach (var compile in planned)
+        foreach (var language in languages)
         {
-            report($"  {compile.Statement}");
-
-            shell.Send(ProgressKeys.NewBuffer);
-            shell.ReadUntilIdle(SettleFor, StepTimeout);
-
-            shell.Send(compile.Statement + ProgressKeys.Enter);
-            shell.ReadUntilIdle(SettleFor, StepTimeout);
-
-            shell.Send(ProgressKeys.Go);
-            screens[compile] = shell.ReadUntilIdle(SettleFor, StepTimeout);
+            RunEditorFor(planned, recipe, language, endpoint, report, screens);
         }
 
         return screens;
+    }
+
+    private void RunEditorFor(
+        IReadOnlyList<PlannedEditorCompile> planned,
+        EditorCompileSettings recipe,
+        string language,
+        SshEndpoint endpoint,
+        Action<string> report,
+        Dictionary<PlannedEditorCompile, string> screens)
+    {
+        var command = recipe.CommandFor(language);
+
+        // Reopened per program where the wrapper takes only one; otherwise one
+        // session serves the ticket, cleared between programs by a key in the
+        // step list.
+        var batches = recipe.RestartPerFile
+            ? planned.Select(compile => (IReadOnlyList<PlannedEditorCompile>)[compile])
+            : [planned];
+
+        foreach (var batch in batches)
+        {
+            // Disposing the shell closes the channel, which is how these editors
+            // are left - they have no exit key, and the manual procedure is to
+            // close the window. Tied to `using` so it also happens on a throw.
+            using var shell = _shells.Open(endpoint);
+
+            shell.ReadUntilIdle(SettleFor, StepTimeout);
+
+            if (recipe.WorkingDirectory is { } directory)
+            {
+                shell.Send($"cd {directory}" + ProgressKeys.Enter);
+                shell.ReadUntilIdle(SettleFor, StepTimeout);
+            }
+
+            report($"Opening the editor: {command}");
+
+            shell.Send(command + ProgressKeys.Enter);
+            shell.ReadUntilIdle(SettleFor, StepTimeout);
+
+            foreach (var compile in batch)
+            {
+                report($"  {compile.Statement}");
+                screens[compile] = SendSteps(shell, recipe.Steps, compile.Statement);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sends one program's step sequence, returning what came back last.
+    /// </summary>
+    /// <remarks>
+    /// Every step is followed by a settle, including the last - the screen after
+    /// the final keystroke is the one worth capturing, since that is where an
+    /// error would appear.
+    /// </remarks>
+    private static string SendSteps(ISshShell shell, IReadOnlyList<EditorStep> steps, string statement)
+    {
+        var screen = string.Empty;
+
+        foreach (var step in steps)
+        {
+            shell.Send(step switch
+            {
+                // No implied Return. Whether one follows is the wrapper's
+                // business and is said out loud in the step list, because one
+                // site needs it and the other is broken by it.
+                EditorStep.Statement => statement,
+                EditorStep.Enter => ProgressKeys.Enter,
+                EditorStep.Go => ProgressKeys.Go,
+                EditorStep.NewBuffer => ProgressKeys.NewBuffer,
+                _ => throw new ArgumentOutOfRangeException(nameof(steps), step, "Unknown editor step.")
+            });
+
+            screen = shell.ReadUntilIdle(SettleFor, StepTimeout);
+        }
+
+        return screen;
     }
 
     /// <summary>

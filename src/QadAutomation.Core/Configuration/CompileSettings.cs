@@ -45,36 +45,104 @@ public sealed record SrcCompileSettings(
     ShellCompileSettings? Shell);
 
 /// <summary>
-/// Compiling one report at a time through the Progress procedure editor.
+/// Compiling a report through an interactive editor wrapper.
 /// </summary>
 /// <remarks>
-/// The manual procedure, which this mirrors exactly: run the editor, press F4,
-/// type a <c>compile ... save into ...</c> statement, press F1. The keystrokes
-/// live in the compiler rather than here because they are properties of the
-/// Progress editor, not of a client's installation - a site that needed
-/// different keys would need different code, not different config.
+/// <para>
+/// <b>The keystrokes are config, and that is a reversal.</b> With one site they
+/// lived in code, on the reasoning that F4 and F1 are properties of the Progress
+/// editor rather than of any installation. A second site disproved it: there the
+/// wrapper is a different script, entered with Enter rather than F4, and needing
+/// F1 twice - once to leave the input window and once to compile. The keys turn
+/// out to belong to the client's wrapper, not to Progress, so they belong here.
+/// </para>
+/// <para>
+/// <see cref="Steps"/> names them symbolically. Nobody should be typing escape
+/// sequences into a JSON file to describe a function key.
+/// </para>
 /// </remarks>
 /// <param name="EditorCommand">
-/// The full command that opens the editor, e.g.
-/// <c>/appl/.../reports/compile_editor us test</c>. Held whole rather than
-/// assembled from parts because its trailing argument names the environment and
-/// the binary's own path may too. Config can be corrected without a rebuild; a
-/// wrong guess in code cannot.
+/// The command that opens the editor, with <c>{language}</c> substituted where
+/// the wrapper takes one. Held whole rather than assembled from parts because
+/// its arguments are the site's and a wrong guess in code cannot be corrected
+/// without a rebuild.
+/// </param>
+/// <param name="WorkingDirectory">
+/// Directory to change to first, or <c>null</c> where the command is absolute.
+/// </param>
+/// <param name="Languages">
+/// Language codes to run the whole procedure once for each of, or empty where
+/// the wrapper is language-neutral.
+/// </param>
+/// <param name="Steps">
+/// What to send for each program, in order. <see cref="EditorStep.Statement"/>
+/// stands for the text; everything else is a keystroke.
+/// </param>
+/// <param name="RestartPerFile">
+/// Whether the editor must be reopened for each program. False where a key in
+/// <see cref="Steps"/> clears the buffer and the session can be reused.
 /// </param>
 /// <param name="StatementTemplate">
-/// The Progress statement to type, with <c>{remoteFile}</c> and
-/// <c>{remoteDirectory}</c> substituted per file.
+/// The text to type, with <c>{remoteFile}</c> and <c>{remoteDirectory}</c>
+/// substituted per file. May be a whole Progress statement or just a path,
+/// depending on what the wrapper is asking for.
 /// </param>
-public sealed record EditorCompileSettings(string EditorCommand, string StatementTemplate)
+public sealed record EditorCompileSettings(
+    string EditorCommand,
+    string? WorkingDirectory,
+    IReadOnlyList<string> Languages,
+    IReadOnlyList<EditorStep> Steps,
+    bool RestartPerFile,
+    string StatementTemplate)
 {
-    /// <summary>What every site observed so far types.</summary>
+    /// <summary>The Progress <c>COMPILE</c> statement, which most sites type.</summary>
     public const string DefaultStatementTemplate = "compile {remoteFile} save into {remoteDirectory}.";
 
-    /// <summary>The statement to type for one report.</summary>
+    /// <summary>
+    /// The first site's editor: F4 to clear the buffer, type, Return, F1 to run.
+    /// </summary>
+    /// <remarks>
+    /// The Return is listed rather than implied by <see cref="EditorStep.Statement"/>,
+    /// because the second site's wrapper must <i>not</i> have one - there a
+    /// function key leaves the input window, and a stray newline first is read
+    /// as an empty second entry.
+    /// </remarks>
+    public static readonly IReadOnlyList<EditorStep> DefaultSteps =
+        [EditorStep.NewBuffer, EditorStep.Statement, EditorStep.Enter, EditorStep.Go];
+
+    /// <summary>The command that opens the editor for one language.</summary>
+    public string CommandFor(string language) =>
+        EditorCommand.Replace("{language}", language, StringComparison.Ordinal);
+
+    /// <summary>The text to type for one report.</summary>
     public string StatementFor(string remoteFile, string remoteDirectory) =>
         StatementTemplate
             .Replace("{remoteFile}", remoteFile, StringComparison.Ordinal)
             .Replace("{remoteDirectory}", remoteDirectory, StringComparison.Ordinal);
+}
+
+/// <summary>
+/// One thing to send to an editor: a keystroke, or the text itself.
+/// </summary>
+/// <remarks>
+/// A closed set rather than free text. An operator writing raw escape sequences
+/// into config would be guessing at bytes no editor shows them, and a wrong
+/// guess is silently ignored by the far end - indistinguishable from a compile
+/// that did nothing.
+/// </remarks>
+public enum EditorStep
+{
+    /// <summary>The statement or path this program needs.</summary>
+    Statement,
+
+    /// <summary>Return.</summary>
+    Enter,
+
+    /// <summary>F1. Runs the buffer on one site; on another, leaves a window.</summary>
+    Go,
+
+    /// <summary>F4. Clears the buffer for the next program.</summary>
+    NewBuffer
 }
 
 /// <summary>
@@ -94,33 +162,58 @@ public sealed record EditorCompileSettings(string EditorCommand, string Statemen
 /// <c>&lt;OK&gt;</c>, so the compiler sends Enter after each command.
 /// </para>
 /// </remarks>
-/// <param name="ManifestPath">
-/// Remote file listing the programs to compile, one bare filename per line,
-/// overwritten each run. Note it is a fixed shared path: two people compiling at
-/// the same time would overwrite each other's list.
-/// </param>
 /// <param name="WorkingDirectory">Directory the commands are run from.</param>
 /// <param name="CommandTemplate">
 /// Run once per language with <c>{language}</c> substituted, e.g.
-/// <c>./compile {language} test</c>. The environment is part of the template
-/// rather than a separate field because it is the script's own argument and its
-/// spelling is the site's, not this tool's.
+/// <c>./compile {language} test</c>. The environment, where the script takes
+/// one, is part of the template rather than a separate field because it is the
+/// script's own argument and its spelling is the site's, not this tool's.
 /// </param>
-/// <param name="Languages">
-/// Language code to the root directory its compiled output lands under. The
-/// results themselves sit one level deeper, in a folder named after the
-/// program's prefix.
-/// </param>
+/// <param name="Languages">Language code to where that language reads and writes.</param>
 public sealed record ManifestCompileSettings(
-    string ManifestPath,
     string WorkingDirectory,
     string CommandTemplate,
-    IReadOnlyDictionary<string, string> Languages)
+    IReadOnlyDictionary<string, LanguageTarget> Languages)
 {
     /// <summary>The command to run for one language.</summary>
     public string CommandFor(string language) =>
         CommandTemplate.Replace("{language}", language, StringComparison.Ordinal);
+
+    /// <summary>Every distinct manifest file this recipe writes.</summary>
+    /// <remarks>
+    /// Distinct, because one site points both languages at a single shared file
+    /// and writing it twice would be pointless work reported twice.
+    /// </remarks>
+    public IReadOnlyList<string> ManifestPaths =>
+        [.. Languages.Values.Select(target => target.ManifestPath).Distinct(StringComparer.Ordinal)];
 }
+
+/// <summary>
+/// Where one language reads its list of work and writes its results.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The two travel together because they are the same language's two halves, and
+/// separating them is how a site could end up writing one language's manifest
+/// while checking another's output.
+/// </para>
+/// <para>
+/// One observed site shares a single manifest between both languages; another
+/// keeps one per language beside that language's output. Naming the path per
+/// language covers both, where a single shared setting could only cover the
+/// first.
+/// </para>
+/// </remarks>
+/// <param name="ManifestPath">
+/// Remote file listing the programs to compile, one bare filename per line,
+/// overwritten each run. Note it is a fixed path shared with everyone else who
+/// compiles on that server: two people at once would overwrite each other's list.
+/// </param>
+/// <param name="ResultRoot">
+/// Root directory this language's compiled output lands under. The results
+/// themselves sit one level deeper, in a folder named after the program's prefix.
+/// </param>
+public sealed record LanguageTarget(string ManifestPath, string ResultRoot);
 
 /// <summary>
 /// Compiling by running one ordinary shell command.

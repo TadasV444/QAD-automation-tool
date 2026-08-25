@@ -220,6 +220,6 @@ public sealed class QadCompilerTests
             Endpoint,
             new RemotePaths("/appl/global/xrc", QrfPath),
             new CompileSettings(
-                new QrfCompileSettings(new EditorCompileSettings("compile_editor us test", EditorCompileSettings.DefaultStatementTemplate), null),
+                new QrfCompileSettings(new EditorCompileSettings("compile_editor us test", null, [], EditorCompileSettings.DefaultSteps, false, EditorCompileSettings.DefaultStatementTemplate), null),
                 null));
 }

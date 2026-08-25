@@ -149,11 +149,23 @@ public sealed class ConfigurationResolver
                 $"(the name of the saved Windows VPN connection).");
         }
 
+        // FortiClient is verified, not dialled, and the message that says so
+        // names the tunnel. Without a name the operator is told to connect
+        // something the tool cannot identify.
+        if (type == VpnType.FortiClient && string.IsNullOrWhiteSpace(vpn.ConnectionName))
+        {
+            errors.Add(
+                $"Client '{clientId}': vpn type 'FortiClient' requires 'connectionName' " +
+                "(the tunnel's name in FortiClient), so the tool can name it when asking " +
+                "you to connect it.");
+        }
+
         return new VpnSettings(
             type,
             Trimmed(vpn.ConnectionName),
             Trimmed(vpn.Username),
-            vpn.Password);
+            vpn.Password,
+            Trimmed(vpn.AdapterName));
     }
 
     private static QadEnvironment? ResolveEnvironment(
@@ -345,11 +357,13 @@ public sealed class ConfigurationResolver
             return null;
         }
 
+        const string block = "compile.qrf.editor";
+
         var editorCommand = Trimmed(editor.EditorCommand);
 
         if (editorCommand is null)
         {
-            errors.Add($"{label}: 'compile.qrf.editor' needs an 'editorCommand'.");
+            errors.Add($"{label}: '{block}' needs an 'editorCommand'.");
             return null;
         }
 
@@ -358,24 +372,95 @@ public sealed class ConfigurationResolver
         if (!statement.Contains("{remoteFile}", StringComparison.Ordinal))
         {
             errors.Add(
-                $"{label}: 'compile.qrf.editor.statement' must contain '{{remoteFile}}', " +
+                $"{label}: '{block}.statement' must contain '{{remoteFile}}', " +
                 "otherwise every report would compile the same file.");
             return null;
         }
 
-        // A Progress statement without its full stop is not a syntax error the
-        // operator would ever see: the editor simply holds an unterminated line
-        // and F1 compiles nothing, which looks exactly like a compile that ran
-        // and changed nothing.
-        if (!statement.EndsWith('.'))
+        // Only when it is a statement rather than a bare path. One site's
+        // wrapper wants a Progress COMPILE line, and one wants the filename on
+        // its own; the space is what tells them apart.
+        //
+        // The rule earns its place on the first: a Progress statement missing
+        // its full stop is not an error anyone sees. The editor holds an
+        // unterminated line, the run key compiles nothing, and it looks exactly
+        // like a compile that ran and changed nothing.
+        if (statement.Any(char.IsWhiteSpace) && !statement.EndsWith('.'))
         {
             errors.Add(
-                $"{label}: 'compile.qrf.editor.statement' must end with '.' - it is a Progress statement.");
+                $"{label}: '{block}.statement' looks like a Progress statement and must " +
+                "end with '.'. If it is meant to be a bare path, remove the spaces.");
             return null;
         }
 
-        return new EditorCompileSettings(editorCommand, statement);
+        var languages = Trimmed(editor.Languages);
+
+        if (editorCommand.Contains("{language}", StringComparison.Ordinal) && languages.Count == 0)
+        {
+            errors.Add(
+                $"{label}: '{block}.editorCommand' contains '{{language}}' but no " +
+                "'languages' are listed, so it could never be substituted.");
+            return null;
+        }
+
+        var steps = ResolveSteps(editor.Steps, block, label, errors);
+
+        if (steps is null)
+        {
+            return null;
+        }
+
+        if (!steps.Contains(EditorStep.Statement))
+        {
+            errors.Add($"{label}: '{block}.steps' must include 'Statement' - otherwise nothing is typed.");
+            return null;
+        }
+
+        return new EditorCompileSettings(
+            editorCommand,
+            Trimmed(editor.WorkingDirectory),
+            languages,
+            steps,
+            editor.RestartPerFile ?? false,
+            statement);
     }
+
+    /// <summary>
+    /// Parses the named keystroke steps, or <c>null</c> if any is unknown.
+    /// </summary>
+    /// <remarks>
+    /// An unrecognised step cannot be skipped: the sequence is the procedure,
+    /// and running it with a gap would send the remaining keys to a window
+    /// expecting something else.
+    /// </remarks>
+    private static IReadOnlyList<EditorStep>? ResolveSteps(
+        List<string>? steps, string block, string label, List<string> errors)
+    {
+        if (steps is null || steps.Count == 0)
+        {
+            return EditorCompileSettings.DefaultSteps;
+        }
+
+        var parsed = new List<EditorStep>(steps.Count);
+
+        foreach (var step in steps.Where(s => !string.IsNullOrWhiteSpace(s)))
+        {
+            if (!Enum.TryParse<EditorStep>(step.Trim(), ignoreCase: true, out var value))
+            {
+                errors.Add(
+                    $"{label}: '{block}.steps' has an unknown step '{step}'. " +
+                    $"Expected one of: {string.Join(", ", Enum.GetNames<EditorStep>())}.");
+                return null;
+            }
+
+            parsed.Add(value);
+        }
+
+        return parsed;
+    }
+
+    private static IReadOnlyList<string> Trimmed(List<string>? values) =>
+        [.. (values ?? []).Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim())];
 
     private static ManifestCompileSettings? ResolveManifestCompile(
         ManifestCompileSection? manifest,
@@ -389,19 +474,9 @@ public sealed class ConfigurationResolver
 
         const string block = "compile.src.manifest";
 
-        var manifestPath = Trimmed(manifest.ManifestPath);
         var workingDirectory = Trimmed(manifest.WorkingDirectory);
         var command = Trimmed(manifest.Command);
-
-        var languages = manifest.Languages?
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
-            .ToDictionary(pair => pair.Key.Trim(), pair => pair.Value.Trim(), StringComparer.Ordinal)
-            ?? [];
-
-        if (manifestPath is null)
-        {
-            errors.Add($"{label}: '{block}' needs a 'manifestPath'.");
-        }
+        var languages = ResolveLanguageTargets(manifest.Languages, block, label, errors);
 
         if (workingDirectory is null)
         {
@@ -415,21 +490,53 @@ public sealed class ConfigurationResolver
         else if (!command.Contains("{language}", StringComparison.Ordinal))
         {
             // Without the placeholder the same language would be compiled once
-            // per entry, and the other language's .r would never move - which
-            // the verification would correctly, but confusingly, call a failure.
+            // per entry, and the other language's output would never move -
+            // which the verification would correctly, but confusingly, call a
+            // failure.
             errors.Add($"{label}: '{block}.command' must contain '{{language}}'.");
         }
 
-        if (languages.Count == 0)
+        return workingDirectory is null || command is null || languages is null
+            ? null
+            : new ManifestCompileSettings(workingDirectory, command, languages);
+    }
+
+    private static IReadOnlyDictionary<string, LanguageTarget>? ResolveLanguageTargets(
+        Dictionary<string, LanguageTargetSection>? languages, string block, string label, List<string> errors)
+    {
+        var resolved = new Dictionary<string, LanguageTarget>(StringComparer.Ordinal);
+
+        foreach (var (code, target) in languages ?? [])
         {
-            errors.Add(
-                $"{label}: '{block}' needs at least one entry in 'languages', " +
-                "mapping a language code to the directory its compiled output lands under.");
+            if (string.IsNullOrWhiteSpace(code) || target is null)
+            {
+                continue;
+            }
+
+            var manifestPath = Trimmed(target.ManifestPath);
+            var resultPath = Trimmed(target.ResultPath);
+
+            if (manifestPath is null || resultPath is null)
+            {
+                errors.Add(
+                    $"{label}: '{block}.languages.{code}' needs both a 'manifestPath' - the list " +
+                    "of programs that language compiles - and a 'resultPath', where its output lands.");
+                return null;
+            }
+
+            resolved[code.Trim()] = new LanguageTarget(manifestPath, resultPath);
         }
 
-        return manifestPath is null || workingDirectory is null || command is null || languages.Count == 0
-            ? null
-            : new ManifestCompileSettings(manifestPath, workingDirectory, command, languages);
+        if (resolved.Count > 0)
+        {
+            return resolved;
+        }
+
+        errors.Add(
+            $"{label}: '{block}' needs at least one entry in 'languages', mapping a language " +
+            "code to its manifest and output directories.");
+
+        return null;
     }
 
     private static ShellCompileSettings? ResolveShellCompile(
