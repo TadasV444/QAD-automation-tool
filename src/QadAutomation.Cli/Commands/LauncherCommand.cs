@@ -52,8 +52,90 @@ public sealed class LauncherCommand
         _error = error;
     }
 
+    /// <summary>
+    /// Runs the flow until the operator says they are done.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Looping rather than exiting because a ticket is rarely the only one, and
+    /// relaunching to deploy the next is friction the menu exists to remove.
+    /// </para>
+    /// <para>
+    /// Failures the tool can explain are caught here and looped over too. The
+    /// commonest of them is a FortiClient tunnel that is not up - which the
+    /// operator fixes in ten seconds and then wants to try again, not start the
+    /// program over. Anything it cannot explain is left to escape: that is a
+    /// defect, and repeating it would only bury the stack trace.
+    /// </para>
+    /// </remarks>
     public int Execute()
     {
+        var result = ExitCode.Ok;
+
+        while (true)
+        {
+            try
+            {
+                result = RunOnce();
+            }
+            catch (Exception ex) when (ExitCode.IsExpected(ex))
+            {
+                _error.WriteLine(ex.Message);
+                result = ExitCode.For(ex);
+            }
+
+            if (!Again())
+            {
+                return result;
+            }
+
+            _output.WriteLine();
+            _output.WriteLine(new string('-', 60));
+            _output.WriteLine();
+        }
+    }
+
+    /// <summary>
+    /// Asks whether to go round again. Returning to the menu is the default.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Enter goes back, not out.</b> The reflex at any prompt is to press
+    /// Enter, and a menu that closed on it would send the operator back to
+    /// relaunching the program - which is the entire thing this was built to
+    /// stop. Leaving is the deliberate act, so leaving is what has to be typed.
+    /// </para>
+    /// <para>
+    /// The safe direction, too: going round again costs one keystroke, while
+    /// quitting by accident costs a relaunch and the loss of everything on
+    /// screen.
+    /// </para>
+    /// <para>
+    /// This doubles as what holds the window open when the tool was
+    /// double-clicked, which is why nothing is printed after it.
+    /// </para>
+    /// </remarks>
+    private bool Again()
+    {
+        _output.WriteLine();
+        _output.Write("[Enter] main menu    [q] quit    > ");
+
+        var answer = _input.ReadLine();
+
+        // End of input is not a person choosing to stay. Nobody is there, so
+        // looping would spin forever - this is what stops a script hanging.
+        if (answer is null)
+        {
+            return false;
+        }
+
+        return answer.Trim().ToLowerInvariant() is not ("q" or "quit" or "exit" or "n");
+    }
+
+    private int RunOnce()
+    {
+        // Reloaded each time round, so a configuration corrected between runs
+        // takes effect without relaunching - the same reason the loop exists.
         var configuration = _loader.Load().Configuration;
 
         _output.WriteLine("QAD Compile Automation Tool");

@@ -58,5 +58,9 @@ id_rsa*
 
 # Internal documentation. Both name real clients and describe their
 # network setup, so they stay local.
-readme.md
+#
+# Note README.md is deliberately NOT here: it is the public front page and
+# must never mention a client. The original planning brief, which does, was
+# renamed to project-brief.md when the public one was written.
+project-brief.md
 information.md

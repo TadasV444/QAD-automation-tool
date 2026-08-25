@@ -98,26 +98,12 @@ public sealed class CommandLineApplication
         {
             return Dispatch(parsed);
         }
-        catch (ConfigurationException ex)
+        catch (Exception ex) when (ExitCode.IsExpected(ex))
         {
-            // Expected, operator-fixable. A stack trace would only add noise.
+            // Operator-fixable. A stack trace would only add noise.
             _error.WriteLine(ex.Message);
-            return ExitCode.ConfigurationError;
-        }
-        catch (TicketFolderException ex)
-        {
-            _error.WriteLine(ex.Message);
-            return ExitCode.TicketError;
-        }
-        catch (VpnException ex)
-        {
-            _error.WriteLine(ex.Message);
-            return ExitCode.VpnError;
-        }
-        catch (TransferException ex)
-        {
-            _error.WriteLine(ex.Message);
-            return ExitCode.TransferError;
+            HoldConsoleOpen(parsed);
+            return ExitCode.For(ex);
         }
         catch (Exception ex)
         {
@@ -125,27 +111,28 @@ public sealed class CommandLineApplication
             // is the useful part and is kept.
             _error.WriteLine("Unexpected error:");
             _error.WriteLine(ex);
+            HoldConsoleOpen(parsed);
             return ExitCode.Unexpected;
-        }
-        finally
-        {
-            // In a finally so it also runs when the flow ended in an error -
-            // which is precisely the run whose output is worth reading, and the
-            // one a closing window would take away.
-            HoldConsoleOpenAfter(parsed);
         }
     }
 
     /// <summary>
-    /// Waits for a keypress, but only after the guided flow and only when this
-    /// process owns the window it printed to.
+    /// Waits for a keypress, but only after a guided flow that ended in an
+    /// error, and only when this process owns the window it printed to.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// A guided flow that ran to completion has already held the window open
+    /// with its own "run again?" question, so a second prompt would be one
+    /// keypress too many. This covers the case that question is never reached.
+    /// </para>
+    /// <para>
     /// Never after a command-line verb. Someone who typed <c>qad upload ...</c>
     /// has a shell to return to and would find the pause an obstruction; someone
     /// who double-clicked has nowhere for the output to go.
+    /// </para>
     /// </remarks>
-    private void HoldConsoleOpenAfter(CommandLineArguments args)
+    private void HoldConsoleOpen(CommandLineArguments args)
     {
         if (!_ownsConsole ||
             !string.Equals(args.Command, CommandLineParser.MenuCommand, StringComparison.OrdinalIgnoreCase))

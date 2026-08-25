@@ -26,8 +26,11 @@ public sealed class EditorStepsTests
     [Fact]
     public void The_first_sites_sequence_is_unchanged_by_the_defaults()
     {
-        // Proven against a real editor, so the defaults must still produce it
-        // exactly: F4, the statement, Return, F1.
+        // Proven against a real editor, so the defaults must reproduce it
+        // exactly - INCLUDING that the statement and its Return go out as one
+        // write. They were split when this sequence became data, and the site's
+        // editor stopped compiling; a person typing a line and pressing Return
+        // does not pause in between, and nor may this.
         Uploaded("rep.p");
         _shell.Produces.Add([$"{QrfPath}/rep.r"]);
 
@@ -36,11 +39,31 @@ public sealed class EditorStepsTests
         Assert.Equal(
             [
                 ProgressKeys.NewBuffer,
-                $"compile {QrfPath}/rep.p save into {QrfPath}.",
-                ProgressKeys.Enter,
+                $"compile {QrfPath}/rep.p save into {QrfPath}." + ProgressKeys.Enter,
                 ProgressKeys.Go
             ],
             KeysAfterEditorOpens("compile_editor"));
+    }
+
+    [Fact]
+    public void A_return_that_does_not_follow_the_statement_stays_its_own_keystroke()
+    {
+        // Only the pair is joined. Another site opens its input window with a
+        // Return BEFORE typing, and that one must arrive on its own - the
+        // window is not ready for the text until it has been read.
+        Uploaded("rep.p");
+        _shell.Produces.Add([$"{QrfPath}/rep.r"]);
+
+        Compile(SecondSite());
+
+        Assert.Equal(
+            [
+                ProgressKeys.Enter,
+                $"{QrfPath}/rep.p",
+                ProgressKeys.Go,
+                ProgressKeys.Go
+            ],
+            KeysAfterEditorOpens("./compile -s"));
     }
 
     [Fact]
