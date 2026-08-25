@@ -76,6 +76,35 @@ public sealed class FortiClientVpnConnectorTests
     }
 
     [Fact]
+    public void One_vendors_two_tunnels_are_told_apart_by_their_adapters()
+    {
+        // Two clients on the same FortiClient install. Both descriptions
+        // contain "Fortinet", so the defaults match either - meaning one
+        // client's tunnel being up would satisfy the other's check, which is
+        // the check passing in exactly the case it exists to catch.
+        //
+        // These two descriptions are real, from two live tunnels: an SSL one
+        // and an IPsec one.
+        var ssl = Connector("Fortinet SSL VPN Virtual Ethernet Adapter");
+
+        Assert.True(ssl.IsConnected(Settings(adapterName: "SSL VPN")));
+        Assert.False(ssl.IsConnected(Settings(adapterName: "NDIS")));
+    }
+
+    [Fact]
+    public void The_other_clients_tunnel_does_not_satisfy_this_ones_check()
+    {
+        var ipsec = Connector("Fortinet Virtual Ethernet Adapter (NDIS 6.30) #2");
+
+        Assert.True(ipsec.IsConnected(Settings(adapterName: "NDIS")));
+        Assert.False(ipsec.IsConnected(Settings(adapterName: "SSL VPN")));
+
+        // And the default would have matched it, which is the whole reason
+        // both clients now name their adapter.
+        Assert.True(ipsec.IsConnected(Settings()));
+    }
+
+    [Fact]
     public void Disconnect_refuses_rather_than_pretending_to_have_worked()
     {
         // Reporting success for a tunnel still carrying traffic is the failure
